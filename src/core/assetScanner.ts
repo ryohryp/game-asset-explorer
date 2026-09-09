@@ -8,6 +8,7 @@ export type AssetFileType = "png" | "jpg" | "jpeg" | "webp" | "gif";
 export interface AssetRecord {
   absolutePath: string;
   relativePath: string;
+  fileName: string;
   fileType: AssetFileType;
 }
 
@@ -88,6 +89,7 @@ async function collectAssets(
     assets.push({
       absolutePath: entryPath,
       relativePath: normalizeDisplayPath(entryPath, workspaceRoot),
+      fileName: entry.name,
       fileType: extension.slice(1) as AssetFileType,
     });
   }
