@@ -16,6 +16,10 @@
       {
         "command": "gameAssetExplorer.scanAssets",
         "title": "Game Asset Explorer: Scan Assets"
+      },
+      {
+        "command": "gameAssetExplorer.openAssetGrid",
+        "title": "Game Asset Explorer: Open Asset Grid"
       }
     ],
     "configuration": {
@@ -35,7 +39,7 @@
   },
   "scripts": {
     "compile": "tsc -p .",
-    "test": "npm run compile && node --test dist/test/assetScanner.test.js"
+    "test": "npm run compile && node --test \"dist/test/**/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
