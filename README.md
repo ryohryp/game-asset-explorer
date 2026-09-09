@@ -30,13 +30,13 @@ The first usable version should provide:
 
 1. Scan configured asset directories.
 2. Display image thumbnails in a grid.
-3. Search by filename and basic metadata/tags where available.
+3. Search by filename and workspace-relative path.
 4. Show Asset Details.
 5. Copy Asset Path.
 6. Find Usages in the workspace.
 7. Automatically reflect added, deleted, and changed image files.
 
-## Asset scanning and thumbnail grid
+## Asset scanning, search, and thumbnail grid
 
 Game Asset Explorer scans configured directories recursively for `.png`, `.jpg`, `.jpeg`, `.webp`, and `.gif` files.
 
@@ -53,7 +53,7 @@ Available commands:
 - **Game Asset Explorer: Scan Assets** rescans the configured directories and reports how many images were found.
 - **Game Asset Explorer: Open Asset Grid** rescans and opens a responsive thumbnail grid in a VS Code panel.
 
-The grid shows each image together with its filename and workspace-relative path. Use the **Refresh** button in the panel to rescan explicitly. Empty scans show an empty state, and a single image that can no longer be rendered does not prevent the rest of the grid from displaying.
+The grid shows each image together with its filename, workspace folder, and workspace-relative path. The search box filters the already-discovered assets in memory using case-insensitive filename and relative-path matching; typing does not rescan the filesystem. Use the **Refresh** button in the panel to rescan explicitly. Empty scans show an empty state, and a single image that can no longer be rendered does not prevent the rest of the grid from displaying.
 
 ### Development
 
@@ -93,4 +93,4 @@ Prefer concrete current problems over speculative future architecture.
 
 ## Status
 
-MVP implementation in progress. Asset-directory scanning and thumbnail browsing are implemented.
+MVP implementation in progress. Asset-directory scanning, thumbnail browsing, workspace-aware asset identity, and in-memory search are implemented.
