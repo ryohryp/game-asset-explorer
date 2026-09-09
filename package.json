@@ -10,9 +10,6 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:gameAssetExplorer.scanAssets"
-  ],
   "main": "./dist/src/extension.js",
   "contributes": {
     "commands": [
