@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { AssetDetails } from "../core/assetDetails";
+import { createExplorationState, reconcileExplorationState, type ExplorationState } from "../explorationState";
 import { AssetUsage } from "../usageSearch";
 import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
 
@@ -29,6 +30,7 @@ export class AssetGridPanel {
   private readonly onOpenUsage: (usage: AssetUsage) => Promise<void>;
   private assets: WorkspaceAsset[] = [];
   private usageResults: AssetUsage[] = [];
+  private viewState: ExplorationState = createExplorationState();
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
     if (AssetGridPanel.currentPanel) {
@@ -81,6 +83,11 @@ export class AssetGridPanel {
     });
 
     this.panel.webview.onDidReceiveMessage(async (message: unknown) => {
+      if (isReadyMessage(message)) {
+        await this.restoreViewState();
+        return;
+      }
+
       if (isRefreshMessage(message)) {
         const assets = await this.onRefresh();
         this.update(assets);
@@ -88,6 +95,7 @@ export class AssetGridPanel {
       }
 
       if (isSearchMessage(message)) {
+        this.viewState = { ...this.viewState, query: message.query };
         const matches = this.onSearch(message.query);
         await this.panel.webview.postMessage({
           type: "searchResults",
@@ -98,9 +106,18 @@ export class AssetGridPanel {
         return;
       }
 
+      if (isScrollMessage(message)) {
+        this.viewState = { ...this.viewState, scrollY: message.scrollY };
+        return;
+      }
+
       if (isSelectMessage(message)) {
+        this.viewState = { ...this.viewState, selectedIdentity: message.identity };
         this.usageResults = [];
         const result = await this.onSelect(message.identity);
+        if (this.viewState.selectedIdentity !== message.identity) {
+          return;
+        }
         await this.panel.webview.postMessage({ type: "assetDetails", result });
         return;
       }
@@ -112,7 +129,11 @@ export class AssetGridPanel {
       }
 
       if (isFindUsagesMessage(message)) {
-        this.usageResults = await this.onFindUsages(message.identity);
+        const usages = await this.onFindUsages(message.identity);
+        if (this.viewState.selectedIdentity !== message.identity) {
+          return;
+        }
+        this.usageResults = usages;
         await this.panel.webview.postMessage({ type: "findUsagesResult", usages: this.usageResults });
         return;
       }
@@ -128,8 +149,56 @@ export class AssetGridPanel {
 
   update(assets: readonly WorkspaceAsset[]): void {
     this.assets = [...assets];
-    this.usageResults = [];
+    const state = reconcileExplorationState(this.viewState, this.assets);
+    this.viewState = {
+      query: state.query,
+      selectedIdentity: state.selectedIdentity,
+      scrollY: state.scrollY,
+    };
+    if (state.selectionStatus === "missing") {
+      this.usageResults = [];
+    }
     this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets);
+  }
+
+  private async restoreViewState(): Promise<void> {
+    const state = reconcileExplorationState(this.viewState, this.assets);
+    this.viewState = {
+      query: state.query,
+      selectedIdentity: state.selectedIdentity,
+      scrollY: state.scrollY,
+    };
+    if (state.selectionStatus === "missing") {
+      this.usageResults = [];
+    }
+
+    const matches = this.onSearch(state.query);
+    await this.panel.webview.postMessage({
+      type: "restoreState",
+      query: state.query,
+      selectedIdentity: state.selectedIdentity,
+      scrollY: state.scrollY,
+      identities: matches.map(getWorkspaceAssetIdentity),
+      count: matches.length,
+      total: this.assets.length,
+    });
+
+    if (!state.selectedIdentity) {
+      return;
+    }
+
+    const restoringIdentity = state.selectedIdentity;
+    const result = await this.onSelect(restoringIdentity);
+    if (this.viewState.selectedIdentity !== restoringIdentity) {
+      return;
+    }
+    if (result.status !== "available") {
+      this.usageResults = [];
+    }
+    await this.panel.webview.postMessage({ type: "assetDetails", result });
+    if (result.status === "available" && this.usageResults.length > 0) {
+      await this.panel.webview.postMessage({ type: "findUsagesResult", usages: this.usageResults });
+    }
   }
 }
 
@@ -204,9 +273,18 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     const summary = document.getElementById('summary');
     const details = document.getElementById('details');
     let selectedIdentity = null;
+    let scrollFramePending = false;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
     search.addEventListener('input', () => vscode.postMessage({ type: 'search', query: search.value }));
+    window.addEventListener('scroll', () => {
+      if (scrollFramePending) return;
+      scrollFramePending = true;
+      requestAnimationFrame(() => {
+        scrollFramePending = false;
+        vscode.postMessage({ type: 'scroll', scrollY: window.scrollY });
+      });
+    }, { passive: true });
 
     document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
       const select = () => {
@@ -227,14 +305,22 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       const message = event.data;
       if (!message) return;
 
-      if (message.type === 'searchResults') {
-        const identities = new Set(message.identities);
+      if (message.type === 'restoreState') {
+        search.value = typeof message.query === 'string' ? message.query : '';
+        selectedIdentity = typeof message.selectedIdentity === 'string' ? message.selectedIdentity : null;
+        applySearchResults(message.identities || [], message.count || 0, message.total || 0);
+        let selectedCard = null;
         document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
-          card.hidden = !identities.has(card.dataset.assetKey);
+          if (card.dataset.assetKey === selectedIdentity) selectedCard = card;
         });
-        summary.textContent = message.count === message.total
-          ? message.total + ' image asset' + (message.total === 1 ? '' : 's')
-          : message.count + ' of ' + message.total + ' image assets';
+        setSelectedCard(selectedCard);
+        const scrollY = Number.isFinite(message.scrollY) && message.scrollY > 0 ? message.scrollY : 0;
+        requestAnimationFrame(() => window.scrollTo(0, scrollY));
+        return;
+      }
+
+      if (message.type === 'searchResults') {
+        applySearchResults(message.identities || [], message.count || 0, message.total || 0);
         return;
       }
 
@@ -253,6 +339,16 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         renderUsages(message.usages || []);
       }
     });
+
+    function applySearchResults(identities, count, total) {
+      const visibleIdentities = new Set(identities);
+      document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
+        card.hidden = !visibleIdentities.has(card.dataset.assetKey);
+      });
+      summary.textContent = count === total
+        ? total + ' image asset' + (total === 1 ? '' : 's')
+        : count + ' of ' + total + ' image assets';
+    }
 
     function setSelectedCard(selectedCard) {
       document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
@@ -397,6 +493,8 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         if (fallback) fallback.style.display = 'block';
       });
     });
+
+    vscode.postMessage({ type: 'ready' });
   </script>
 </body>
 </html>`;
@@ -438,6 +536,10 @@ function createNonce(): string {
   return nonce;
 }
 
+function isReadyMessage(message: unknown): message is { type: "ready" } {
+  return typeof message === "object" && message !== null && "type" in message && message.type === "ready";
+}
+
 function isRefreshMessage(message: unknown): message is { type: "refresh" } {
   return typeof message === "object" && message !== null && "type" in message && message.type === "refresh";
 }
@@ -449,6 +551,17 @@ function isSearchMessage(message: unknown): message is { type: "search"; query: 
     && message.type === "search"
     && "query" in message
     && typeof message.query === "string";
+}
+
+function isScrollMessage(message: unknown): message is { type: "scroll"; scrollY: number } {
+  return typeof message === "object"
+    && message !== null
+    && "type" in message
+    && message.type === "scroll"
+    && "scrollY" in message
+    && typeof message.scrollY === "number"
+    && Number.isFinite(message.scrollY)
+    && message.scrollY >= 0;
 }
 
 function isSelectMessage(message: unknown): message is { type: "select"; identity: string } {
