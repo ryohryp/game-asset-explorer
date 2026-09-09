@@ -1,0 +1,48 @@
+{
+  "name": "game-asset-explorer",
+  "displayName": "Game Asset Explorer",
+  "description": "Asset DevTools for managing game image assets in VS Code.",
+  "version": "0.0.1",
+  "publisher": "ryohryp",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:gameAssetExplorer.scanAssets"
+  ],
+  "main": "./dist/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gameAssetExplorer.scanAssets",
+        "title": "Game Asset Explorer: Scan Assets"
+      }
+    ],
+    "configuration": {
+      "title": "Game Asset Explorer",
+      "properties": {
+        "gameAssetExplorer.assetDirectories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "description": "Workspace-relative directories to scan recursively for image assets."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "test": "npm run compile && node --test dist/test/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.7.2"
+  }
+}
