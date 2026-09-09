@@ -157,17 +157,20 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     button:hover { background: var(--vscode-button-hoverBackground); }
     button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
     button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-    .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 340px); gap: 16px; align-items: start; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-    .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; }
-    .card:hover, .card:focus { border-color: var(--vscode-focusBorder); outline: none; }
+    .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 18px; align-items: start; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 14px; align-items: start; }
+    .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; transition: background-color 80ms ease, border-color 80ms ease, box-shadow 80ms ease; }
+    .card:hover { background: var(--vscode-list-hoverBackground); }
+    .card:focus { outline: none; }
+    .card:focus-visible { border-color: var(--vscode-focusBorder); outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+    .card.selected { border-color: var(--vscode-focusBorder); box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); background: var(--vscode-list-inactiveSelectionBackground); }
     .card[hidden] { display: none; }
     .preview { display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; padding: 8px; background: var(--vscode-editor-inactiveSelectionBackground); }
     .preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
     .broken { display: none; color: var(--vscode-descriptionForeground); text-align: center; padding: 12px; }
-    .meta { padding: 8px 10px 10px; }
-    .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-    .path { margin-top: 4px; overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
+    .meta { padding: 9px 10px 10px; }
+    .name { display: -webkit-box; min-height: 2.5em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-weight: 600; line-height: 1.25; }
+    .path { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
     .details { position: sticky; top: 16px; border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 14px; background: var(--vscode-sideBar-background); }
     .details h2 { margin: 0 0 12px; font-size: 1.05rem; }
     .details h3 { margin: 16px 0 8px; font-size: 0.95rem; }
@@ -183,7 +186,9 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .usage-path { display: block; overflow-wrap: anywhere; font-size: 0.9em; }
     .usage-location { display: block; margin-top: 2px; color: var(--vscode-descriptionForeground); font-size: 0.8em; }
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
+    @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 14px; } .grid { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
+    @media (max-width: 440px) { body { padding: 12px; } .toolbar { flex-wrap: wrap; gap: 8px; } .search { order: 1; flex-basis: 100%; max-width: none; } .summary { margin-left: 0; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -206,6 +211,7 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
       const select = () => {
         selectedIdentity = card.dataset.assetKey;
+        setSelectedCard(card);
         vscode.postMessage({ type: 'select', identity: selectedIdentity });
       };
       card.addEventListener('click', select);
@@ -247,6 +253,18 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         renderUsages(message.usages || []);
       }
     });
+
+    function setSelectedCard(selectedCard) {
+      document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
+        const isSelected = card === selectedCard;
+        card.classList.toggle('selected', isSelected);
+        if (isSelected) {
+          card.setAttribute('aria-current', 'true');
+        } else {
+          card.removeAttribute('aria-current');
+        }
+      });
+    }
 
     function renderDetails(result) {
       if (!details) return;
@@ -389,7 +407,8 @@ function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset
   const imageUri = webview.asWebviewUri(vscode.Uri.file(asset.absolutePath));
   const identity = getWorkspaceAssetIdentity(workspaceAsset);
   const displayPath = `${workspaceAsset.workspaceFolderName}: ${asset.relativePath}`;
-  return `<article class="card" tabindex="0" role="button" aria-label="Show details for ${escapeHtml(asset.fileName)}" data-asset-key="${escapeHtml(identity)}">
+  const accessibleLabel = `Show details for ${asset.fileName}, ${displayPath}`;
+  return `<article class="card" tabindex="0" role="button" aria-label="${escapeHtml(accessibleLabel)}" data-asset-key="${escapeHtml(identity)}">
     <div class="preview">
       <img data-fallback src="${escapeHtml(imageUri.toString())}" alt="${escapeHtml(asset.fileName)}">
       <div class="broken">Preview unavailable</div>
