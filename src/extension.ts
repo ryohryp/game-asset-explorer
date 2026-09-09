@@ -1,13 +1,20 @@
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { loadAssetDetails } from "./core/assetDetails";
-import { scanAssets } from "./core/assetScanner";
+import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
+import { DebouncedAction } from "./core/debouncedAction";
 import { AssetGridPanel } from "./ui/assetGridPanel";
 import { findWorkspaceAssetUsages, openAssetUsage } from "./usageSearch";
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
+let disposeWatcherResources: (() => void) | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  let activePanel: AssetGridPanel | undefined;
+  let watcherDisposables: vscode.Disposable[] = [];
+  let watcherRefresh: DebouncedAction | undefined;
+
   const scanAndStore = async (showMessage: boolean): Promise<WorkspaceAsset[]> => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -54,6 +61,74 @@ export function activate(context: vscode.ExtensionContext): void {
     return discoveredAssets;
   };
 
+  const refreshFromFilesystem = async (): Promise<void> => {
+    const assets = await scanAndStore(false);
+    if (!activePanel) {
+      return;
+    }
+
+    try {
+      activePanel.update(assets);
+    } catch (error) {
+      activePanel = undefined;
+      console.warn("Game Asset Explorer: Unable to refresh closed asset grid.", error);
+    }
+  };
+
+  const disposeWatchers = (): void => {
+    watcherRefresh?.dispose();
+    watcherRefresh = undefined;
+
+    for (const disposable of watcherDisposables) {
+      disposable.dispose();
+    }
+    watcherDisposables = [];
+  };
+
+  const rebuildWatchers = (): void => {
+    disposeWatchers();
+
+    watcherRefresh = new DebouncedAction(() => {
+      void refreshFromFilesystem().catch((error) => {
+        console.error("Game Asset Explorer: Automatic asset refresh failed.", error);
+      });
+    }, 250);
+
+    for (const workspaceFolder of vscode.workspace.workspaceFolders ?? []) {
+      const configuration = vscode.workspace.getConfiguration("gameAssetExplorer", workspaceFolder.uri);
+      const assetDirectories = configuration.get<string[]>("assetDirectories", []);
+
+      for (const configuredDirectory of assetDirectories) {
+        const trimmedDirectory = configuredDirectory.trim();
+        if (!trimmedDirectory) {
+          continue;
+        }
+
+        const directoryPath = path.isAbsolute(trimmedDirectory)
+          ? path.normalize(trimmedDirectory)
+          : path.resolve(workspaceFolder.uri.fsPath, trimmedDirectory);
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(directoryPath), "**/*"),
+        );
+        const onAssetEvent = (uri: vscode.Uri): void => {
+          if (isSupportedAssetPath(uri.fsPath)) {
+            watcherRefresh?.trigger();
+          }
+        };
+
+        watcherDisposables.push(
+          watcher,
+          watcher.onDidCreate(onAssetEvent),
+          watcher.onDidChange(onAssetEvent),
+          watcher.onDidDelete(onAssetEvent),
+        );
+      }
+    }
+  };
+
+  disposeWatcherResources = disposeWatchers;
+  rebuildWatchers();
+
   const findAsset = (identity: string): WorkspaceAsset | undefined => (
     discoveredAssets.find((asset) => getWorkspaceAssetIdentity(asset) === identity)
   );
@@ -99,13 +174,36 @@ export function activate(context: vscode.ExtensionContext): void {
       onOpenUsage: openAssetUsage,
     });
 
+    activePanel = panel;
     const assets = await scanAndStore(false);
     panel.update(assets);
   });
 
-  context.subscriptions.push(scanCommand, openCommand);
+  const workspaceFolderListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    rebuildWatchers();
+    watcherRefresh?.trigger();
+  });
+
+  const configurationListener = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (!event.affectsConfiguration("gameAssetExplorer.assetDirectories")) {
+      return;
+    }
+
+    rebuildWatchers();
+    watcherRefresh?.trigger();
+  });
+
+  context.subscriptions.push(
+    scanCommand,
+    openCommand,
+    workspaceFolderListener,
+    configurationListener,
+    { dispose: disposeWatchers },
+  );
 }
 
 export function deactivate(): void {
+  disposeWatcherResources?.();
+  disposeWatcherResources = undefined;
   discoveredAssets = [];
 }
