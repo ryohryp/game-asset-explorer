@@ -21,9 +21,9 @@ The game project's filesystem is the source of truth for whether an image exists
 - If a manifest is introduced later, it should describe meaning and metadata, not replace the filesystem.
 - Do not treat previous conversations, generated plans, or speculative future designs as more authoritative than the repository.
 
-## MVP priorities
+## MVP baseline
 
-Focus first on:
+The MVP baseline consists of:
 
 1. Asset-directory scanning
 2. Thumbnail grid
@@ -33,7 +33,7 @@ Focus first on:
 6. Find Usages
 7. File-system change tracking
 
-Do not implement future features merely because they may become useful later.
+These workflows are implemented. Post-MVP work should still be selected from concrete developer friction and implementation-ready Issues rather than speculative future architecture.
 
 ## Architecture guidance
 
@@ -52,15 +52,26 @@ Normal autonomous implementation work follows one Issue per loop and normally on
 For each loop:
 
 1. Read the current base branch, this file, relevant architecture/ADR documents, and the selected open Issue.
-2. Confirm that the Issue is inside the current MVP and is implementation-ready: goal, scope, non-goals, and acceptance criteria are clear enough to act on.
-3. Implement the smallest change that satisfies the acceptance criteria.
+2. Confirm that the Issue is implementation-ready: goal, scope, non-goals, and acceptance criteria are clear enough to act on, dependencies are satisfied, and it does not cross a hard stop below.
+3. Implement the smallest change that satisfies the acceptance criteria that can be validated in the current engineering environment.
 4. Add or update focused tests for changed behavior.
 5. Run `npm test`. Compilation and every discovered compiled test must pass.
 6. Review the complete diff for regressions, architecture-boundary violations, unnecessary dependencies, and unrelated changes.
-7. Open a PR that explains the change and links/closes the Issue.
-8. Treat CI success as required before the loop is complete.
+7. Open a PR that explains the change and links/closes the Issue when all required validation for that Issue is complete.
+8. Treat CI success as required before the engineering portion of the loop is complete.
+9. After merge, reassess current repository state and open Issues before selecting the next implementation-ready unit.
 
 Do not combine unrelated Issues merely to make a larger batch. Small supporting refactors are allowed only when they are directly required by the selected Issue.
+
+### Deferred manual validation
+
+Manual VS Code/dogfood checks may be batched when the user explicitly chooses to validate later.
+
+- Do not claim deferred manual validation passed.
+- An Issue may remain open after its implementation PR is merged if only deferred manual validation remains.
+- Such an Issue must not block selection of another implementation-ready Issue.
+- When selecting work, skip Issues whose only remaining action is deferred manual validation.
+- Preserve the pending validation in the Issue so it can be reviewed in a later dogfood batch.
 
 See `docs/loop-engineering.md` for the lifecycle and stop conditions.
 
@@ -68,12 +79,15 @@ See `docs/loop-engineering.md` for the lifecycle and stop conditions.
 
 Stop implementation and surface the decision instead of silently expanding scope when any of these is true:
 
-- The change would add a manifest, stable asset ID, database, engine-specific parser, AI-generation workflow, CLI/CI product feature, or another explicitly deferred capability.
+- The change would add a manifest, stable asset ID, database, engine-specific parser, AI-generation workflow, CLI/CI product feature, or another explicitly deferred high-impact capability without separate approval.
 - The selected Issue conflicts with `docs/architecture.md` or an accepted ADR.
 - Satisfying the Issue requires changing a product-level behavior or architecture boundary not covered by its acceptance criteria.
 - A dependency or framework would be introduced mainly for future flexibility rather than the current Issue.
 - Tests or CI fail and the cause cannot be resolved within the Issue's scope.
-- MVP items 1-7 are complete. At that point, stop autonomous feature expansion and validate the extension in a real game-development workflow before selecting post-MVP work.
+- The Issue depends on another implementation that does not actually exist on the current base branch.
+- No implementation-ready Issue remains that can be completed without one of the conditions above.
+
+MVP completion by itself is not a stop condition. Pending manual dogfood validation by itself is also not a stop condition when the user has explicitly chosen batched validation.
 
 When stopping, prefer creating or refining an Issue that makes the unresolved decision explicit rather than inventing the answer in code.
 
@@ -87,7 +101,7 @@ If the answer is unclear, prefer the smaller implementation.
 
 ## Future candidates
 
-Only after MVP validation:
+Consider only when a concrete workflow and Issue justify them:
 
 - Manifest / stable asset IDs
 - Unused and missing-reference detection
