@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
+import { loadAssetDetails } from "./core/assetDetails";
 import { scanAssets } from "./core/assetScanner";
 import { AssetGridPanel } from "./ui/assetGridPanel";
-import { filterWorkspaceAssets, WorkspaceAsset } from "./workspaceAsset";
+import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
 
@@ -52,6 +53,10 @@ export function activate(context: vscode.ExtensionContext): void {
     return discoveredAssets;
   };
 
+  const findAsset = (identity: string): WorkspaceAsset | undefined => (
+    discoveredAssets.find((asset) => getWorkspaceAssetIdentity(asset) === identity)
+  );
+
   const scanCommand = vscode.commands.registerCommand("gameAssetExplorer.scanAssets", async () => {
     await scanAndStore(true);
   });
@@ -61,6 +66,27 @@ export function activate(context: vscode.ExtensionContext): void {
       extensionUri: context.extensionUri,
       onRefresh: () => scanAndStore(false),
       onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
+      onSelect: async (identity) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          return { status: "missing" as const };
+        }
+
+        const details = await loadAssetDetails(workspaceAsset.asset);
+        return {
+          ...details,
+          workspaceAsset,
+        };
+      },
+      onCopyPath: async (identity) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          return false;
+        }
+
+        await vscode.env.clipboard.writeText(workspaceAsset.asset.relativePath);
+        return true;
+      },
     });
 
     const assets = await scanAndStore(false);
