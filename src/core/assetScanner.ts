@@ -22,6 +22,10 @@ export interface ScanAssetsResult {
   warnings: string[];
 }
 
+export function isSupportedAssetPath(filePath: string): boolean {
+  return SUPPORTED_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
 export async function scanAssets(options: ScanAssetsOptions): Promise<ScanAssetsResult> {
   const workspaceRoot = path.resolve(options.workspaceRoot);
   const assets: AssetRecord[] = [];
@@ -81,11 +85,11 @@ async function collectAssets(
       continue;
     }
 
-    const extension = path.extname(entry.name).toLowerCase();
-    if (!SUPPORTED_EXTENSIONS.has(extension)) {
+    if (!isSupportedAssetPath(entry.name)) {
       continue;
     }
 
+    const extension = path.extname(entry.name).toLowerCase();
     assets.push({
       absolutePath: entryPath,
       relativePath: normalizeDisplayPath(entryPath, workspaceRoot),
