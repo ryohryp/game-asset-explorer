@@ -36,9 +36,9 @@ The first usable version should provide:
 6. Find Usages in the workspace.
 7. Automatically reflect added, deleted, and changed image files.
 
-## Asset scanning
+## Asset scanning and thumbnail grid
 
-The first MVP slice scans configured directories recursively for `.png`, `.jpg`, `.jpeg`, `.webp`, and `.gif` files.
+Game Asset Explorer scans configured directories recursively for `.png`, `.jpg`, `.jpeg`, `.webp`, and `.gif` files.
 
 Configure one or more workspace-relative directories in `.vscode/settings.json` or VS Code Settings:
 
@@ -48,7 +48,12 @@ Configure one or more workspace-relative directories in `.vscode/settings.json` 
 }
 ```
 
-Run **Game Asset Explorer: Scan Assets** from the Command Palette. The extension keeps the discovered assets in memory and reports the number found. Missing or invalid configured directories are skipped with warnings instead of failing the whole scan.
+Available commands:
+
+- **Game Asset Explorer: Scan Assets** rescans the configured directories and reports how many images were found.
+- **Game Asset Explorer: Open Asset Grid** rescans and opens a responsive thumbnail grid in a VS Code panel.
+
+The grid shows each image together with its filename and workspace-relative path. Use the **Refresh** button in the panel to rescan explicitly. Empty scans show an empty state, and a single image that can no longer be rendered does not prevent the rest of the grid from displaying.
 
 ### Development
 
@@ -88,4 +93,4 @@ Prefer concrete current problems over speculative future architecture.
 
 ## Status
 
-MVP implementation in progress. Asset-directory scanning is the first implemented vertical slice.
+MVP implementation in progress. Asset-directory scanning and thumbnail browsing are implemented.
