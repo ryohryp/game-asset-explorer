@@ -11,7 +11,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:gameAssetExplorer.scanAssets"
+    "onCommand:gameAssetExplorer.scanAssets",
+    "onCommand:gameAssetExplorer.openAssetGrid"
   ],
   "main": "./dist/src/extension.js",
   "contributes": {
@@ -19,6 +20,10 @@
       {
         "command": "gameAssetExplorer.scanAssets",
         "title": "Game Asset Explorer: Scan Assets"
+      },
+      {
+        "command": "gameAssetExplorer.openAssetGrid",
+        "title": "Game Asset Explorer: Open Asset Grid"
       }
     ],
     "configuration": {
