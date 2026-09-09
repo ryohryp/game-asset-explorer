@@ -1,18 +1,19 @@
-import * as path from "node:path";
 import * as vscode from "vscode";
-import { AssetRecord } from "../core/assetScanner";
+import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
 
 export interface AssetGridPanelOptions {
   extensionUri: vscode.Uri;
-  onRefresh: () => Promise<AssetRecord[]>;
+  onRefresh: () => Promise<WorkspaceAsset[]>;
+  onSearch: (query: string) => WorkspaceAsset[];
 }
 
 export class AssetGridPanel {
   private static currentPanel: AssetGridPanel | undefined;
 
   private readonly panel: vscode.WebviewPanel;
-  private readonly onRefresh: () => Promise<AssetRecord[]>;
-  private assets: AssetRecord[] = [];
+  private readonly onRefresh: () => Promise<WorkspaceAsset[]>;
+  private readonly onSearch: (query: string) => WorkspaceAsset[];
+  private assets: WorkspaceAsset[] = [];
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
     if (AssetGridPanel.currentPanel) {
@@ -31,35 +32,49 @@ export class AssetGridPanel {
       },
     );
 
-    AssetGridPanel.currentPanel = new AssetGridPanel(panel, options.onRefresh);
+    AssetGridPanel.currentPanel = new AssetGridPanel(panel, options.onRefresh, options.onSearch);
     return AssetGridPanel.currentPanel;
   }
 
-  private constructor(panel: vscode.WebviewPanel, onRefresh: () => Promise<AssetRecord[]>) {
+  private constructor(
+    panel: vscode.WebviewPanel,
+    onRefresh: () => Promise<WorkspaceAsset[]>,
+    onSearch: (query: string) => WorkspaceAsset[],
+  ) {
     this.panel = panel;
     this.onRefresh = onRefresh;
+    this.onSearch = onSearch;
 
     this.panel.onDidDispose(() => {
       AssetGridPanel.currentPanel = undefined;
     });
 
     this.panel.webview.onDidReceiveMessage(async (message: unknown) => {
-      if (!isRefreshMessage(message)) {
+      if (isRefreshMessage(message)) {
+        const assets = await this.onRefresh();
+        this.update(assets);
         return;
       }
 
-      const assets = await this.onRefresh();
-      this.update(assets);
+      if (isSearchMessage(message)) {
+        const matches = this.onSearch(message.query);
+        await this.panel.webview.postMessage({
+          type: "searchResults",
+          identities: matches.map(getWorkspaceAssetIdentity),
+          count: matches.length,
+          total: this.assets.length,
+        });
+      }
     });
   }
 
-  update(assets: readonly AssetRecord[]): void {
+  update(assets: readonly WorkspaceAsset[]): void {
     this.assets = [...assets];
     this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets);
   }
 }
 
-function getWebviewHtml(webview: vscode.Webview, assets: readonly AssetRecord[]): string {
+function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset[]): string {
   const nonce = createNonce();
   const cards = assets.map((asset) => renderAssetCard(webview, asset)).join("\n");
   const body = assets.length === 0
@@ -75,12 +90,15 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly AssetRecord[])
   <title>Game Asset Explorer</title>
   <style>
     body { margin: 0; padding: 16px; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); }
-    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-    .summary { color: var(--vscode-descriptionForeground); }
+    .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .search { flex: 1; min-width: 120px; max-width: 520px; border: 1px solid var(--vscode-input-border, transparent); color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 6px 8px; outline: none; }
+    .search:focus { border-color: var(--vscode-focusBorder); }
+    .summary { margin-left: auto; color: var(--vscode-descriptionForeground); white-space: nowrap; }
     button { border: 1px solid var(--vscode-button-border, transparent); color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 6px 12px; border-radius: 2px; cursor: pointer; }
     button:hover { background: var(--vscode-button-hoverBackground); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; }
+    .card[hidden] { display: none; }
     .preview { display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; padding: 8px; background: var(--vscode-editor-inactiveSelectionBackground); }
     .preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
     .broken { display: none; color: var(--vscode-descriptionForeground); text-align: center; padding: 12px; }
@@ -92,13 +110,32 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly AssetRecord[])
 </head>
 <body>
   <div class="toolbar">
-    <div class="summary">${assets.length} image asset${assets.length === 1 ? "" : "s"}</div>
+    <input id="search" class="search" type="search" placeholder="Search filename or path" aria-label="Search assets">
+    <div id="summary" class="summary">${assets.length} image asset${assets.length === 1 ? "" : "s"}</div>
     <button id="refresh" type="button">Refresh</button>
   </div>
   ${body}
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    const search = document.getElementById('search');
+    const summary = document.getElementById('summary');
+
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+    search.addEventListener('input', () => vscode.postMessage({ type: 'search', query: search.value }));
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || message.type !== 'searchResults') return;
+
+      const identities = new Set(message.identities);
+      document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
+        card.hidden = !identities.has(card.dataset.assetKey);
+      });
+      summary.textContent = message.count === message.total
+        ? message.total + ' image asset' + (message.total === 1 ? '' : 's')
+        : message.count + ' of ' + message.total + ' image assets';
+    });
+
     document.querySelectorAll('img[data-fallback]').forEach((image) => {
       image.addEventListener('error', () => {
         image.style.display = 'none';
@@ -111,17 +148,19 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly AssetRecord[])
 </html>`;
 }
 
-function renderAssetCard(webview: vscode.Webview, asset: AssetRecord): string {
+function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset): string {
+  const asset = workspaceAsset.asset;
   const imageUri = webview.asWebviewUri(vscode.Uri.file(asset.absolutePath));
-  const filename = path.basename(asset.relativePath);
-  return `<article class="card">
+  const identity = getWorkspaceAssetIdentity(workspaceAsset);
+  const displayPath = `${workspaceAsset.workspaceFolderName}: ${asset.relativePath}`;
+  return `<article class="card" data-asset-key="${escapeHtml(identity)}">
     <div class="preview">
-      <img data-fallback src="${escapeHtml(imageUri.toString())}" alt="${escapeHtml(filename)}">
+      <img data-fallback src="${escapeHtml(imageUri.toString())}" alt="${escapeHtml(asset.fileName)}">
       <div class="broken">Preview unavailable</div>
     </div>
     <div class="meta">
-      <div class="name" title="${escapeHtml(filename)}">${escapeHtml(filename)}</div>
-      <div class="path">${escapeHtml(asset.relativePath)}</div>
+      <div class="name" title="${escapeHtml(asset.fileName)}">${escapeHtml(asset.fileName)}</div>
+      <div class="path" title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</div>
     </div>
   </article>`;
 }
@@ -146,4 +185,13 @@ function createNonce(): string {
 
 function isRefreshMessage(message: unknown): message is { type: "refresh" } {
   return typeof message === "object" && message !== null && "type" in message && message.type === "refresh";
+}
+
+function isSearchMessage(message: unknown): message is { type: "search"; query: string } {
+  return typeof message === "object"
+    && message !== null
+    && "type" in message
+    && message.type === "search"
+    && "query" in message
+    && typeof message.query === "string";
 }
