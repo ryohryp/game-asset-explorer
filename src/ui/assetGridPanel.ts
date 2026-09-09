@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { AssetDetails } from "../core/assetDetails";
+import { AssetUsage } from "../usageSearch";
 import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
 
 export type AssetSelectionResult =
@@ -12,6 +13,8 @@ export interface AssetGridPanelOptions {
   onSearch: (query: string) => WorkspaceAsset[];
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onCopyPath: (identity: string) => Promise<boolean>;
+  onFindUsages: (identity: string) => Promise<AssetUsage[]>;
+  onOpenUsage: (usage: AssetUsage) => Promise<void>;
 }
 
 export class AssetGridPanel {
@@ -22,7 +25,10 @@ export class AssetGridPanel {
   private readonly onSearch: (query: string) => WorkspaceAsset[];
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
+  private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
+  private readonly onOpenUsage: (usage: AssetUsage) => Promise<void>;
   private assets: WorkspaceAsset[] = [];
+  private usageResults: AssetUsage[] = [];
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
     if (AssetGridPanel.currentPanel) {
@@ -47,6 +53,8 @@ export class AssetGridPanel {
       options.onSearch,
       options.onSelect,
       options.onCopyPath,
+      options.onFindUsages,
+      options.onOpenUsage,
     );
     return AssetGridPanel.currentPanel;
   }
@@ -57,12 +65,16 @@ export class AssetGridPanel {
     onSearch: (query: string) => WorkspaceAsset[],
     onSelect: (identity: string) => Promise<AssetSelectionResult>,
     onCopyPath: (identity: string) => Promise<boolean>,
+    onFindUsages: (identity: string) => Promise<AssetUsage[]>,
+    onOpenUsage: (usage: AssetUsage) => Promise<void>,
   ) {
     this.panel = panel;
     this.onRefresh = onRefresh;
     this.onSearch = onSearch;
     this.onSelect = onSelect;
     this.onCopyPath = onCopyPath;
+    this.onFindUsages = onFindUsages;
+    this.onOpenUsage = onOpenUsage;
 
     this.panel.onDidDispose(() => {
       AssetGridPanel.currentPanel = undefined;
@@ -87,6 +99,7 @@ export class AssetGridPanel {
       }
 
       if (isSelectMessage(message)) {
+        this.usageResults = [];
         const result = await this.onSelect(message.identity);
         await this.panel.webview.postMessage({ type: "assetDetails", result });
         return;
@@ -95,12 +108,27 @@ export class AssetGridPanel {
       if (isCopyPathMessage(message)) {
         const copied = await this.onCopyPath(message.identity);
         await this.panel.webview.postMessage({ type: "copyPathResult", copied });
+        return;
+      }
+
+      if (isFindUsagesMessage(message)) {
+        this.usageResults = await this.onFindUsages(message.identity);
+        await this.panel.webview.postMessage({ type: "findUsagesResult", usages: this.usageResults });
+        return;
+      }
+
+      if (isOpenUsageMessage(message)) {
+        const usage = this.usageResults[message.index];
+        if (usage) {
+          await this.onOpenUsage(usage);
+        }
       }
     });
   }
 
   update(assets: readonly WorkspaceAsset[]): void {
     this.assets = [...assets];
+    this.usageResults = [];
     this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets);
   }
 }
@@ -127,7 +155,9 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .summary { margin-left: auto; color: var(--vscode-descriptionForeground); white-space: nowrap; }
     button { border: 1px solid var(--vscode-button-border, transparent); color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 6px 12px; border-radius: 2px; cursor: pointer; }
     button:hover { background: var(--vscode-button-hoverBackground); }
-    .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 16px; align-items: start; }
+    button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+    button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+    .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 340px); gap: 16px; align-items: start; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; }
     .card:hover, .card:focus { border-color: var(--vscode-focusBorder); outline: none; }
@@ -140,12 +170,18 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .path { margin-top: 4px; overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
     .details { position: sticky; top: 16px; border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 14px; background: var(--vscode-sideBar-background); }
     .details h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .details h3 { margin: 16px 0 8px; font-size: 0.95rem; }
     .detail-row { margin: 10px 0; }
     .detail-label { display: block; color: var(--vscode-descriptionForeground); font-size: 0.8em; margin-bottom: 2px; }
     .detail-value { overflow-wrap: anywhere; }
-    .details-actions { margin-top: 14px; }
+    .details-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .status { margin-top: 8px; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
     .missing { color: var(--vscode-errorForeground); }
+    .usage-list { display: flex; flex-direction: column; gap: 6px; }
+    .usage { width: 100%; text-align: left; color: var(--vscode-foreground); background: var(--vscode-list-inactiveSelectionBackground); border-color: transparent; }
+    .usage:hover { background: var(--vscode-list-hoverBackground); }
+    .usage-path { display: block; overflow-wrap: anywhere; font-size: 0.9em; }
+    .usage-location { display: block; margin-top: 2px; color: var(--vscode-descriptionForeground); font-size: 0.8em; }
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
   </style>
@@ -204,6 +240,11 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       if (message.type === 'copyPathResult') {
         const status = document.getElementById('copy-status');
         if (status) status.textContent = message.copied ? 'Path copied.' : 'Asset is no longer available.';
+        return;
+      }
+
+      if (message.type === 'findUsagesResult') {
+        renderUsages(message.usages || []);
       }
     });
 
@@ -234,17 +275,76 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
 
       const actions = document.createElement('div');
       actions.className = 'details-actions';
+
       const copyButton = document.createElement('button');
       copyButton.type = 'button';
       copyButton.textContent = 'Copy Asset Path';
       copyButton.addEventListener('click', () => {
         if (selectedIdentity) vscode.postMessage({ type: 'copyPath', identity: selectedIdentity });
       });
-      const status = document.createElement('div');
-      status.id = 'copy-status';
-      status.className = 'status';
-      actions.append(copyButton, status);
+
+      const usagesButton = document.createElement('button');
+      usagesButton.type = 'button';
+      usagesButton.className = 'secondary';
+      usagesButton.textContent = 'Find Usages';
+      usagesButton.addEventListener('click', () => {
+        if (!selectedIdentity) return;
+        const status = document.getElementById('usage-status');
+        if (status) status.textContent = 'Searching workspace…';
+        vscode.postMessage({ type: 'findUsages', identity: selectedIdentity });
+      });
+
+      actions.append(copyButton, usagesButton);
       details.appendChild(actions);
+
+      const copyStatus = document.createElement('div');
+      copyStatus.id = 'copy-status';
+      copyStatus.className = 'status';
+      details.appendChild(copyStatus);
+
+      const usageStatus = document.createElement('div');
+      usageStatus.id = 'usage-status';
+      usageStatus.className = 'status';
+      details.appendChild(usageStatus);
+
+      const usageContainer = document.createElement('div');
+      usageContainer.id = 'usages';
+      details.appendChild(usageContainer);
+    }
+
+    function renderUsages(usages) {
+      const container = document.getElementById('usages');
+      const status = document.getElementById('usage-status');
+      if (!container || !status) return;
+
+      container.replaceChildren();
+      status.textContent = usages.length === 0
+        ? 'No text usages found in this workspace.'
+        : usages.length + ' usage' + (usages.length === 1 ? '' : 's') + ' found.';
+
+      if (usages.length === 0) return;
+
+      const heading = document.createElement('h3');
+      heading.textContent = 'Usages';
+      const list = document.createElement('div');
+      list.className = 'usage-list';
+
+      usages.forEach((usage, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'usage';
+        const pathNode = document.createElement('span');
+        pathNode.className = 'usage-path';
+        pathNode.textContent = usage.sourcePath;
+        const location = document.createElement('span');
+        location.className = 'usage-location';
+        location.textContent = 'Line ' + (usage.line + 1) + ', column ' + (usage.character + 1) + ' · ' + usage.matchedText;
+        button.append(pathNode, location);
+        button.addEventListener('click', () => vscode.postMessage({ type: 'openUsage', index }));
+        list.appendChild(button);
+      });
+
+      container.append(heading, list);
     }
 
     function addDetailRow(label, value) {
@@ -338,6 +438,21 @@ function isSelectMessage(message: unknown): message is { type: "select"; identit
 
 function isCopyPathMessage(message: unknown): message is { type: "copyPath"; identity: string } {
   return isIdentityMessage(message, "copyPath");
+}
+
+function isFindUsagesMessage(message: unknown): message is { type: "findUsages"; identity: string } {
+  return isIdentityMessage(message, "findUsages");
+}
+
+function isOpenUsageMessage(message: unknown): message is { type: "openUsage"; index: number } {
+  return typeof message === "object"
+    && message !== null
+    && "type" in message
+    && message.type === "openUsage"
+    && "index" in message
+    && typeof message.index === "number"
+    && Number.isInteger(message.index)
+    && message.index >= 0;
 }
 
 function isIdentityMessage(message: unknown, type: string): message is { type: string; identity: string } {

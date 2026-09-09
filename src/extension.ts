@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { loadAssetDetails } from "./core/assetDetails";
 import { scanAssets } from "./core/assetScanner";
 import { AssetGridPanel } from "./ui/assetGridPanel";
+import { findWorkspaceAssetUsages, openAssetUsage } from "./usageSearch";
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
@@ -87,6 +88,15 @@ export function activate(context: vscode.ExtensionContext): void {
         await vscode.env.clipboard.writeText(workspaceAsset.asset.relativePath);
         return true;
       },
+      onFindUsages: async (identity) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          return [];
+        }
+
+        return findWorkspaceAssetUsages(workspaceAsset);
+      },
+      onOpenUsage: openAssetUsage,
     });
 
     const assets = await scanAndStore(false);
