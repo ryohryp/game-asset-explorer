@@ -34,6 +34,7 @@ test("recursively discovers supported image files and filters unsupported files"
         "assets/ui/spark.gif",
       ],
     );
+    assert.deepEqual(result.assets.map((asset) => asset.fileName), ["hero.png", "portrait.jpeg", "button.JPG", "panel.webp", "spark.gif"]);
     assert.deepEqual(result.assets.map((asset) => asset.fileType), ["png", "jpeg", "jpg", "webp", "gif"]);
     assert.deepEqual(result.warnings, []);
   } finally {
