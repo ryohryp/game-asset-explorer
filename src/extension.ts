@@ -1,11 +1,12 @@
 import * as vscode from "vscode";
-import { AssetRecord, scanAssets } from "./core/assetScanner";
+import { scanAssets } from "./core/assetScanner";
 import { AssetGridPanel } from "./ui/assetGridPanel";
+import { filterWorkspaceAssets, WorkspaceAsset } from "./workspaceAsset";
 
-let discoveredAssets: AssetRecord[] = [];
+let discoveredAssets: WorkspaceAsset[] = [];
 
 export function activate(context: vscode.ExtensionContext): void {
-  const scanAndStore = async (showMessage: boolean): Promise<AssetRecord[]> => {
+  const scanAndStore = async (showMessage: boolean): Promise<WorkspaceAsset[]> => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
       discoveredAssets = [];
@@ -15,7 +16,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return discoveredAssets;
     }
 
-    const nextAssets: AssetRecord[] = [];
+    const nextAssets: WorkspaceAsset[] = [];
     const warnings: string[] = [];
 
     for (const workspaceFolder of workspaceFolders) {
@@ -27,7 +28,11 @@ export function activate(context: vscode.ExtensionContext): void {
         assetDirectories,
       });
 
-      nextAssets.push(...result.assets);
+      nextAssets.push(...result.assets.map((asset) => ({
+        workspaceFolderUri: workspaceFolder.uri.toString(),
+        workspaceFolderName: workspaceFolder.name,
+        asset,
+      })));
       warnings.push(...result.warnings.map((warning) => `${workspaceFolder.name}: ${warning}`));
     }
 
@@ -55,6 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const panel = AssetGridPanel.show({
       extensionUri: context.extensionUri,
       onRefresh: () => scanAndStore(false),
+      onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
     });
 
     const assets = await scanAndStore(false);
