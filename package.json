@@ -15,17 +15,77 @@
     "commands": [
       {
         "command": "gameAssetExplorer.scanAssets",
-        "title": "Game Asset Explorer: Scan Assets"
+        "title": "Game Asset Explorer: Scan Assets",
+        "icon": "$(refresh)"
       },
       {
         "command": "gameAssetExplorer.openAssetGrid",
-        "title": "Game Asset Explorer: Open Asset Grid"
+        "title": "Game Asset Explorer: Open Asset Grid",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "gameAssetExplorer.configureAssetDirectories",
+        "title": "Game Asset Explorer: Configure Asset Directories",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "gameAssetExplorer.setOpenAiApiKey",
         "title": "Game Asset Explorer: Set OpenAI API Key"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gameAssetExplorer",
+          "title": "Game Asset Explorer",
+          "icon": "media/asset-explorer.svg"
+        }
+      ]
+    },
+    "views": {
+      "gameAssetExplorer": [
+        {
+          "id": "gameAssetExplorer.explorer",
+          "name": "Assets"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "gameAssetExplorer.explorer",
+        "contents": "Open a game project folder to start exploring image assets.\n[Open Folder](command:workbench.action.files.openFolder)",
+        "when": "!gameAssetExplorer.hasWorkspace"
+      },
+      {
+        "view": "gameAssetExplorer.explorer",
+        "contents": "Choose the folders that contain your game images.\n[Configure Asset Directories](command:gameAssetExplorer.configureAssetDirectories)",
+        "when": "gameAssetExplorer.hasWorkspace && !gameAssetExplorer.hasUsableAssetDirectories"
+      },
+      {
+        "view": "gameAssetExplorer.explorer",
+        "contents": "Browse and inspect the configured game image assets.\n[Open Asset Grid](command:gameAssetExplorer.openAssetGrid)\n[Configure Asset Directories](command:gameAssetExplorer.configureAssetDirectories)",
+        "when": "gameAssetExplorer.hasUsableAssetDirectories"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gameAssetExplorer.openAssetGrid",
+          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gameAssetExplorer.scanAssets",
+          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gameAssetExplorer.configureAssetDirectories",
+          "when": "view == gameAssetExplorer.explorer",
+          "group": "navigation@3"
+        }
+      ]
+    },
     "configuration": {
       "title": "Game Asset Explorer",
       "properties": {
