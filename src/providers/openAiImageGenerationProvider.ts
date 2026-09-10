@@ -144,7 +144,8 @@ class FetchOpenAiImageTransport implements OpenAiImageTransport {
     form.append("output_format", request.outputFormat);
     form.append("background", request.background);
     form.append("n", String(request.candidateCount));
-    form.append("image[]", new Blob([request.image.bytes], { type: request.image.mediaType }), request.image.fileName);
+    const uploadBuffer = Uint8Array.from(request.image.bytes).buffer;
+    form.append("image[]", new Blob([uploadBuffer], { type: request.image.mediaType }), request.image.fileName);
 
     const response = await fetch(ENDPOINT, {
       method: "POST",
