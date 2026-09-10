@@ -1,0 +1,111 @@
+import * as path from "node:path";
+import {
+  createGenerationPackage,
+  type GenerationAssetKind,
+  type GenerationImageFormat,
+  type GenerationPackage,
+} from "./core/generationPackage";
+import { type WorkspaceAsset } from "./workspaceAsset";
+
+export type VariantIntentPreset = "pose-action" | "damage-state" | "environment" | "custom";
+export type VariantOutputSize = "1024x1024" | "1536x1024" | "1024x1536";
+
+export interface VariantRequestInput {
+  preset: VariantIntentPreset;
+  customRequest?: string;
+  outputPath?: string;
+  outputSize?: VariantOutputSize;
+  outputFormat?: GenerationImageFormat;
+  assetKind?: GenerationAssetKind;
+}
+
+const PRESET_REQUESTS: Record<Exclude<VariantIntentPreset, "custom">, string> = {
+  "pose-action": "Create a distinct pose or action while preserving the Approved Anchor's identity, silhouette, and visual style.",
+  "damage-state": "Create a damaged or worn state while preserving the Approved Anchor's identity, silhouette, and visual style.",
+  environment: "Create an environment, time-of-day, or weather variant while preserving the Approved Anchor's subject identity and visual style.",
+};
+
+const OUTPUT_SIZES: Record<VariantOutputSize, { width: number; height: number }> = {
+  "1024x1024": { width: 1024, height: 1024 },
+  "1536x1024": { width: 1536, height: 1024 },
+  "1024x1536": { width: 1024, height: 1536 },
+};
+
+export function getVariantPresetRequest(preset: VariantIntentPreset, customRequest?: string): string {
+  if (preset === "custom") {
+    const request = customRequest?.trim() ?? "";
+    if (!request) {
+      throw new Error("A custom variant request is required for custom intent.");
+    }
+    return request;
+  }
+  return PRESET_REQUESTS[preset];
+}
+
+export function getDefaultVariantOutputPath(
+  asset: WorkspaceAsset,
+  format: GenerationImageFormat = defaultFormatForAsset(asset),
+): string {
+  const relativePath = asset.asset.relativePath.replaceAll("\\", "/");
+  const directory = path.posix.dirname(relativePath);
+  const extension = format === "jpeg" ? "jpg" : format;
+  const baseName = path.posix.basename(relativePath, path.posix.extname(relativePath));
+  const fileName = `${baseName}_variant.${extension}`;
+  return directory === "." ? fileName : `${directory}/${fileName}`;
+}
+
+export function buildVariantGenerationPackage(
+  selectedAsset: WorkspaceAsset,
+  input: VariantRequestInput,
+): GenerationPackage {
+  const format = input.outputFormat ?? defaultFormatForAsset(selectedAsset);
+  const outputPath = input.outputPath?.trim() || getDefaultVariantOutputPath(selectedAsset, format);
+  const size = OUTPUT_SIZES[input.outputSize ?? "1024x1024"];
+
+  if (!outputExtensionMatchesFormat(outputPath, format)) {
+    throw new Error("Variant output filename extension must match the selected output format.");
+  }
+
+  return createGenerationPackage({
+    assetKind: input.assetKind ?? "other",
+    intent: "variant",
+    userRequest: getVariantPresetRequest(input.preset, input.customRequest),
+    references: [{
+      relativePath: selectedAsset.asset.relativePath,
+      role: "source",
+      required: true,
+    }],
+    output: {
+      relativePath: outputPath,
+      width: size.width,
+      height: size.height,
+      format,
+      alpha: "preserve",
+      writeMode: "create",
+    },
+  });
+}
+
+export function getVariantOutputSizes(): readonly VariantOutputSize[] {
+  return ["1024x1024", "1536x1024", "1024x1536"];
+}
+
+function defaultFormatForAsset(asset: WorkspaceAsset): GenerationImageFormat {
+  switch (asset.asset.fileType) {
+    case "jpg":
+    case "jpeg":
+    case "webp":
+    case "png":
+      return asset.asset.fileType;
+    case "gif":
+      return "png";
+  }
+}
+
+function outputExtensionMatchesFormat(relativePath: string, format: GenerationImageFormat): boolean {
+  const extension = path.posix.extname(relativePath).toLowerCase().slice(1);
+  if (format === "jpg" || format === "jpeg") {
+    return extension === "jpg" || extension === "jpeg";
+  }
+  return extension === format;
+}
