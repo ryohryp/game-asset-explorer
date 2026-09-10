@@ -177,7 +177,7 @@ export function isSafeWorkspaceRelativePath(value: string): boolean {
 }
 
 export function normalizeWorkspacePath(value: string): string {
-  return value.trim().replaceAll("\\", "/").replace(/^\.\/+/, "").replace(/^\/+/, "");
+  return value.trim().replaceAll("\\", "/").replace(/^\.\/+/, "");
 }
 
 function outputExtensionMatchesFormat(relativePath: string, format: GenerationImageFormat): boolean {
