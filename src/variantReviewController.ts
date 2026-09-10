@@ -19,6 +19,8 @@ export type VariantApprovalHandler = (
   candidateId: string,
 ) => Promise<void>;
 
+const SAFE_PREVIEW_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
 export class VariantReviewController {
   private session: VariantReviewSession | undefined;
   private readonly approveHandler: VariantApprovalHandler;
@@ -92,8 +94,8 @@ export class VariantReviewController {
 }
 
 function toDataUri(mediaType: string, bytes: Uint8Array): string {
-  if (!mediaType.startsWith("image/")) {
-    throw new Error("Generate Variant preview must use an image media type.");
+  if (!SAFE_PREVIEW_MEDIA_TYPES.has(mediaType)) {
+    throw new Error("Generate Variant preview uses an unsupported or unsafe image media type.");
   }
   return `data:${mediaType};base64,${Buffer.from(bytes).toString("base64")}`;
 }
