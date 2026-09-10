@@ -8,6 +8,7 @@ import {
 } from "../assetFacets";
 import { type AssetHealthReport, type MissingAssetReference } from "../assetHealthSearch";
 import { AssetDetails } from "../core/assetDetails";
+import { listCharacterNames, UNASSIGNED_CHARACTER_LABEL } from "../core/assetCharacterGrouping";
 import {
   UNCATEGORIZED_ASSET_TYPE_LABEL,
   type AssetProfile,
@@ -28,6 +29,8 @@ export type AssetSelectionResult =
   | { status: "available"; workspaceAsset: WorkspaceAsset; details: AssetDetails }
   | { status: "missing"; workspaceAsset?: WorkspaceAsset };
 
+type AssetViewMode = "grid" | "character";
+
 export interface AssetGridPanelOptions {
   extensionUri: vscode.Uri;
   assetProfile: AssetProfile;
@@ -35,6 +38,7 @@ export interface AssetGridPanelOptions {
   onSearch: (query: string) => WorkspaceAsset[];
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
+  onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
   onCopyPath: (identity: string) => Promise<boolean>;
   onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
@@ -52,6 +56,7 @@ export class AssetGridPanel {
   private readonly onSearch: (query: string) => WorkspaceAsset[];
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
   private readonly onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
+  private readonly onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
   private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   private readonly onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
@@ -67,6 +72,7 @@ export class AssetGridPanel {
   private variantReviewIdentity: string | undefined;
   private viewState: ExplorationState = createExplorationState();
   private facets: AssetFacetSelection = {};
+  private viewMode: AssetViewMode = "grid";
   private disposed = false;
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
@@ -97,6 +103,7 @@ export class AssetGridPanel {
     this.onSearch = options.onSearch;
     this.onSelect = options.onSelect;
     this.onSetAssetType = options.onSetAssetType;
+    this.onSetCharacter = options.onSetCharacter;
     this.onCopyPath = options.onCopyPath;
     this.onFindUsages = options.onFindUsages;
     this.onCheckHealth = options.onCheckHealth;
@@ -130,6 +137,11 @@ export class AssetGridPanel {
         this.viewState = { ...this.viewState, query: message.query };
         this.facets = reconcileAssetFacetSelection(message.facets, this.assets, this.assetProfile.assetTypes);
         await this.postFilterResults(message.query);
+        return;
+      }
+
+      if (isViewModeMessage(message)) {
+        this.viewMode = message.viewMode;
         return;
       }
 
@@ -168,6 +180,22 @@ export class AssetGridPanel {
           }
         } catch (error) {
           await this.postAssetTypeError(formatError(error));
+        }
+        return;
+      }
+
+      if (isSetCharacterMessage(message)) {
+        if (this.viewState.selectedIdentity !== message.identity) {
+          await this.postCharacterError("Selected asset changed before the character was saved.");
+          return;
+        }
+        try {
+          const assets = await this.onSetCharacter(message.identity, message.character);
+          if (!this.disposed) {
+            this.update(assets);
+          }
+        } catch (error) {
+          await this.postCharacterError(formatError(error));
         }
         return;
       }
@@ -293,7 +321,7 @@ export class AssetGridPanel {
         });
       }
     }
-    this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets, this.assetProfile);
+    this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets, this.assetProfile, this.viewMode);
   }
 
   private async postFilterResults(query: string): Promise<void> {
@@ -382,23 +410,30 @@ export class AssetGridPanel {
       await this.panel.webview.postMessage({ type: "assetTypeError", message });
     }
   }
+  private async postCharacterError(message: string): Promise<void> {
+    if (!this.disposed) {
+      await this.panel.webview.postMessage({ type: "characterError", message });
+    }
+  }
 }
 
 function getWebviewHtml(
   webview: vscode.Webview,
   assets: readonly WorkspaceAsset[],
   assetProfile: AssetProfile,
+  viewMode: AssetViewMode,
 ): string {
   const nonce = createNonce();
-  const cards = assets.map((asset) => renderAssetCard(webview, asset)).join("\n");
+  const cards = assets.map((asset, index) => renderAssetCard(webview, asset, index)).join("\n");
   const facetOptions = buildAssetFacetOptions(assets, assetProfile.assetTypes);
   const workspaceFacet = facetOptions.workspaces.length > 1
     ? renderFacetSelect("workspace-filter", "Workspace", facetOptions.workspaces)
     : "";
   const body = assets.length === 0
     ? `<div class="empty"><strong>No image assets found.</strong><span>Configure <code>gameAssetExplorer.assetDirectories</code> and refresh.</span></div>`
-    : `<div class="content"><div class="grid">${cards}</div><aside id="details" class="details" hidden></aside></div>`;
+    : `<div class="content"><div id="asset-grid" class="grid">${cards}</div><aside id="details" class="details" hidden></aside></div>`;
   const serializedProfile = serializeForScript({ label: assetProfile.label, assetTypes: assetProfile.assetTypes });
+  const serializedCharacters = serializeForScript(listCharacterNames(assets));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -427,6 +462,13 @@ function getWebviewHtml(
     button:disabled, select:disabled { opacity: 0.55; cursor: default; }
     .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 18px; align-items: start; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 14px; align-items: start; }
+    .grid.character-mode { display: block; }
+    .character-group { margin-bottom: 22px; }
+    .character-group[hidden] { display: none; }
+    .character-heading { display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--vscode-widget-border); }
+    .character-title { font-size: 1.02rem; font-weight: 600; }
+    .character-count { color: var(--vscode-descriptionForeground); font-size: 0.82em; }
+    .character-assets { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 14px; align-items: start; }
     .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; transition: background-color 80ms ease, border-color 80ms ease, box-shadow 80ms ease; }
     .card:hover { background: var(--vscode-list-hoverBackground); }
     .card:focus { outline: none; }
@@ -439,6 +481,7 @@ function getWebviewHtml(
     .meta { padding: 9px 10px 10px; }
     .name { display: -webkit-box; min-height: 2.5em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-weight: 600; line-height: 1.25; }
     .asset-type { margin-top: 6px; font-size: 0.78em; font-weight: 600; color: var(--vscode-descriptionForeground); }
+    .character-name { margin-top: 3px; font-size: 0.76em; color: var(--vscode-descriptionForeground); }
     .path { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
     .details { position: sticky; top: 16px; border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 14px; background: var(--vscode-sideBar-background); }
     .details h2 { margin: 0 0 12px; font-size: 1.05rem; }
@@ -469,9 +512,9 @@ function getWebviewHtml(
     .variant-candidate img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--vscode-editor-inactiveSelectionBackground); margin-bottom: 7px; }
     .variant-output { margin-bottom: 8px; overflow-wrap: anywhere; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
-    @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px; } .grid { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
+    @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px; } .grid, .character-assets { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
-    @media (max-width: 440px) { body { padding: 12px; } .toolbar { flex-wrap: wrap; gap: 8px; } .search { order: 1; flex-basis: 100%; max-width: none; } .summary { margin-left: 0; } .facet-label { flex: 1 1 100%; } .facet-select { flex: 1; max-width: none; } .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 440px) { body { padding: 12px; } .toolbar { flex-wrap: wrap; gap: 8px; } .search { order: 1; flex-basis: 100%; max-width: none; } .summary { margin-left: 0; } .facet-label { flex: 1 1 100%; } .facet-select { flex: 1; max-width: none; } .grid, .character-assets { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -481,6 +524,7 @@ function getWebviewHtml(
     <button id="refresh" type="button">Refresh</button>
   </div>
   <div class="facets" aria-label="Asset filters">
+    <label class="facet-label">View<select id="view-mode" class="facet-select" aria-label="Asset view mode"><option value="grid"${viewMode === "grid" ? " selected" : ""}>Grid</option><option value="character"${viewMode === "character" ? " selected" : ""}>Characters</option></select></label>
     ${renderFacetSelect("folder-filter", "Folder", facetOptions.folders)}
     ${renderFacetSelect("asset-type-filter", "Asset Type", facetOptions.assetTypes)}
     ${renderFacetSelect("format-filter", "Format", facetOptions.fileTypes)}
@@ -493,9 +537,12 @@ function getWebviewHtml(
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const assetProfile = ${serializedProfile};
+    const characterNames = ${serializedCharacters};
     const search = document.getElementById('search');
     const summary = document.getElementById('summary');
     const details = document.getElementById('details');
+    const assetGrid = document.getElementById('asset-grid');
+    const viewModeControl = document.getElementById('view-mode');
     const folderFilter = document.getElementById('folder-filter');
     const assetTypeFilter = document.getElementById('asset-type-filter');
     const formatFilter = document.getElementById('format-filter');
@@ -506,6 +553,10 @@ function getWebviewHtml(
     let scrollFramePending = false;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+    if (viewModeControl) viewModeControl.addEventListener('change', () => {
+      applyViewMode(viewModeControl.value);
+      vscode.postMessage({ type: 'viewMode', viewMode: viewModeControl.value });
+    });
     search.addEventListener('input', sendFilter);
     [folderFilter, assetTypeFilter, formatFilter, workspaceFilter]
       .filter(Boolean)
@@ -579,6 +630,18 @@ function getWebviewHtml(
         return;
       }
 
+      if (message.type === 'characterError') {
+        const input = document.getElementById('character-input');
+        const save = document.getElementById('character-save');
+        const clear = document.getElementById('character-clear');
+        if (input) input.disabled = false;
+        if (save) save.disabled = false;
+        if (clear) clear.disabled = false;
+        const status = document.getElementById('character-status');
+        if (status) status.textContent = message.message || 'Unable to save character.';
+        return;
+      }
+
       if (message.type === 'copyPathResult') {
         const status = document.getElementById('copy-status');
         if (status) status.textContent = message.copied ? 'Path copied.' : 'Asset is no longer available.';
@@ -649,9 +712,66 @@ function getWebviewHtml(
       document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
         card.hidden = !visibleIdentities.has(card.dataset.assetKey);
       });
+      updateCharacterGroups();
       summary.textContent = count === total
         ? total + ' image asset' + (total === 1 ? '' : 's')
         : count + ' of ' + total + ' image assets';
+    }
+
+    function applyViewMode(mode) {
+      if (!assetGrid) return;
+      const cards = Array.from(document.querySelectorAll('.card[data-asset-key]'));
+      if (mode !== 'character') {
+        cards.sort((left, right) => Number(left.dataset.assetOrder) - Number(right.dataset.assetOrder));
+        assetGrid.replaceChildren(...cards);
+        assetGrid.classList.remove('character-mode');
+        if (viewModeControl) viewModeControl.value = 'grid';
+        return;
+      }
+
+      const groups = new Map();
+      cards.forEach((card) => {
+        const character = card.dataset.character || '${UNASSIGNED_CHARACTER_LABEL}';
+        const items = groups.get(character) || [];
+        items.push(card);
+        groups.set(character, items);
+      });
+      const labels = Array.from(groups.keys()).sort((left, right) => {
+        if (left === '${UNASSIGNED_CHARACTER_LABEL}') return 1;
+        if (right === '${UNASSIGNED_CHARACTER_LABEL}') return -1;
+        return left.localeCompare(right);
+      });
+      const sections = labels.map((label) => {
+        const section = document.createElement('section');
+        section.className = 'character-group';
+        const heading = document.createElement('div');
+        heading.className = 'character-heading';
+        const title = document.createElement('span');
+        title.className = 'character-title';
+        title.textContent = label;
+        const count = document.createElement('span');
+        count.className = 'character-count';
+        heading.append(title, count);
+        const assets = document.createElement('div');
+        assets.className = 'character-assets';
+        assets.append(...groups.get(label));
+        section.append(heading, assets);
+        return section;
+      });
+      assetGrid.replaceChildren(...sections);
+      assetGrid.classList.add('character-mode');
+      if (viewModeControl) viewModeControl.value = 'character';
+      updateCharacterGroups();
+    }
+
+    function updateCharacterGroups() {
+      document.querySelectorAll('.character-group').forEach((group) => {
+        const visibleCount = Array.from(group.querySelectorAll('.card[data-asset-key]'))
+          .filter((card) => !card.hidden).length;
+        group.hidden = visibleCount === 0;
+        const count = group.querySelector('.character-count');
+        if (count) count.textContent = visibleCount + ' asset' + (visibleCount === 1 ? '' : 's');
+      });
     }
 
     function setSelectedCard(selectedCard) {
@@ -685,6 +805,7 @@ function getWebviewHtml(
       addDetailRow('Path', asset.relativePath);
       addDetailRow('Workspace', result.workspaceAsset.workspaceFolderName);
       addAssetTypeControl(result.workspaceAsset.assetType);
+      addCharacterControl(result.workspaceAsset.character);
       addDetailRow('Format', asset.fileType.toUpperCase());
       addDetailRow('Size', formatBytes(result.details.sizeBytes));
       addDetailRow('Modified', new Date(result.details.modifiedAt).toLocaleString());
@@ -762,6 +883,70 @@ function getWebviewHtml(
 
       const status = statusNode('asset-type-status');
       row.append(label, select, status);
+      details.appendChild(row);
+    }
+
+    function addCharacterControl(currentCharacter) {
+      const row = document.createElement('div');
+      row.className = 'detail-row';
+      const label = document.createElement('label');
+      label.className = 'detail-label';
+      label.htmlFor = 'character-input';
+      label.textContent = 'Character';
+
+      const input = document.createElement('input');
+      input.id = 'character-input';
+      input.className = 'variant-control';
+      input.type = 'text';
+      input.maxLength = 64;
+      input.placeholder = 'Unassigned';
+      input.value = typeof currentCharacter === 'string' ? currentCharacter : '';
+      input.setAttribute('list', 'character-options');
+
+      const dataList = document.createElement('datalist');
+      dataList.id = 'character-options';
+      characterNames.forEach((character) => {
+        const option = document.createElement('option');
+        option.value = character;
+        dataList.appendChild(option);
+      });
+
+      const actions = document.createElement('div');
+      actions.className = 'details-actions';
+      let save;
+      let clear;
+      const saveCharacter = (value) => {
+        if (!selectedIdentity) return;
+        input.disabled = true;
+        if (save) save.disabled = true;
+        if (clear) clear.disabled = true;
+        const status = document.getElementById('character-status');
+        if (status) status.textContent = 'Saving character…';
+        const character = value.trim();
+        vscode.postMessage({
+          type: 'setCharacter',
+          identity: selectedIdentity,
+          character: character || undefined,
+        });
+      };
+      save = actionButton('Save Character', false, () => saveCharacter(input.value));
+      save.id = 'character-save';
+      clear = actionButton('Clear', true, () => {
+        input.value = '';
+        saveCharacter('');
+      });
+      clear.id = 'character-clear';
+      actions.append(save, clear);
+
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          saveCharacter(input.value);
+        }
+      });
+
+      const status = statusNode('character-status');
+      row.append(label, input, dataList, actions, status);
       details.appendChild(row);
     }
 
@@ -1058,6 +1243,7 @@ function getWebviewHtml(
       });
     });
 
+    applyViewMode(viewModeControl ? viewModeControl.value : 'grid');
     updateFilterStatus();
     vscode.postMessage({ type: 'ready' });
   </script>
@@ -1072,14 +1258,15 @@ function renderFacetSelect(id: string, label: string, options: readonly AssetFac
   return `<label class="facet-label">${escapeHtml(label)}<select id="${escapeHtml(id)}" class="facet-select" aria-label="Filter by ${escapeHtml(label.toLowerCase())}"><option value="">All</option>${renderedOptions}</select></label>`;
 }
 
-function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset): string {
+function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset, assetOrder?: number): string {
   const asset = workspaceAsset.asset;
   const imageUri = webview.asWebviewUri(vscode.Uri.file(asset.absolutePath));
   const identity = getWorkspaceAssetIdentity(workspaceAsset);
   const displayPath = `${workspaceAsset.workspaceFolderName}: ${asset.relativePath}`;
   const assetType = workspaceAsset.assetType ?? UNCATEGORIZED_ASSET_TYPE_LABEL;
-  const accessibleLabel = `Show details for ${asset.fileName}, ${assetType}, ${displayPath}`;
-  return `<article class="card" tabindex="0" role="button" aria-label="${escapeHtml(accessibleLabel)}" data-asset-key="${escapeHtml(identity)}">
+  const character = workspaceAsset.character ?? UNASSIGNED_CHARACTER_LABEL;
+  const accessibleLabel = `Show details for ${asset.fileName}, ${assetType}, character ${character}, ${displayPath}`;
+  return `<article class="card" tabindex="0" role="button" aria-label="${escapeHtml(accessibleLabel)}" data-asset-key="${escapeHtml(identity)}" data-character="${escapeHtml(character)}" data-asset-order="${assetOrder ?? 0}">
     <div class="preview">
       <img data-fallback src="${escapeHtml(imageUri.toString())}" alt="${escapeHtml(asset.fileName)}">
       <div class="broken">Preview unavailable</div>
@@ -1087,6 +1274,7 @@ function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset
     <div class="meta">
       <div class="name" title="${escapeHtml(asset.fileName)}">${escapeHtml(asset.fileName)}</div>
       <div class="asset-type">${escapeHtml(assetType)}</div>
+      <div class="character-name">Character: ${escapeHtml(character)}</div>
       <div class="path" title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</div>
     </div>
   </article>`;
@@ -1165,6 +1353,15 @@ function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
 }
 
+function isViewModeMessage(message: unknown): message is { type: "viewMode"; viewMode: AssetViewMode } {
+  return typeof message === "object"
+    && message !== null
+    && "type" in message
+    && message.type === "viewMode"
+    && "viewMode" in message
+    && (message.viewMode === "grid" || message.viewMode === "character");
+}
+
 function isScrollMessage(message: unknown): message is { type: "scroll"; scrollY: number } {
   return typeof message === "object"
     && message !== null
@@ -1188,6 +1385,16 @@ function isSetAssetTypeMessage(message: unknown): message is { type: "setAssetTy
     return true;
   }
   return typeof message.assetType === "string" && message.assetType.length <= 64;
+}
+
+function isSetCharacterMessage(message: unknown): message is { type: "setCharacter"; identity: string; character?: string } {
+  if (!isIdentityMessage(message, "setCharacter")) {
+    return false;
+  }
+  if (!("character" in message) || message.character === undefined) {
+    return true;
+  }
+  return typeof message.character === "string" && message.character.length <= 64;
 }
 
 function isCopyPathMessage(message: unknown): message is { type: "copyPath"; identity: string } {

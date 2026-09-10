@@ -111,3 +111,9 @@ Prefer concrete current problems over speculative future architecture.
 ## Status
 
 MVP implementation in progress. Asset-directory scanning, thumbnail browsing, workspace-aware asset identity, in-memory search, and optional genre-aware semantic asset types are implemented.
+
+## Character view
+
+Assets can optionally be assigned to a character in Asset Details. Switch the Asset Grid **View** control to **Characters** to group standing art, expressions, portraits, icons, battle sprites, and other cross-type images by character without changing the project folder structure.
+
+Character assignments reuse `.game-asset-explorer/asset-types.json` as project-local Git-friendly metadata. Assets without an assignment appear under **Unassigned**. Search and existing facets still filter the grouped view.
