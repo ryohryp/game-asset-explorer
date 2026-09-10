@@ -55,6 +55,23 @@ Available commands:
 
 The grid shows each image together with its filename, workspace folder, and workspace-relative path. The search box filters the already-discovered assets in memory using case-insensitive filename and relative-path matching; typing does not rescan the filesystem. Use the **Refresh** button in the panel to rescan explicitly. Empty scans show an empty state, and a single image that can no longer be rendered does not prevent the rest of the grid from displaying.
 
+## Asset Profiles and semantic types
+
+Game Asset Explorer can organize assets using a game-genre-oriented Asset Profile while keeping the filesystem authoritative for image existence.
+
+Select a built-in profile in VS Code Settings with `gameAssetExplorer.assetProfile`:
+
+- `generic`
+- `rpg`
+- `action`
+- `visual-novel`
+- `card-game`
+- `custom`
+
+For `custom`, configure `gameAssetExplorer.customAssetTypes`. The Asset Grid shows a semantic **Asset Type** filter alongside the existing image **Format** filter, and Asset Details lets you classify the selected image. Assets without a valid type are explicitly shown as **Uncategorized**.
+
+Type assignments are optional Git-friendly workspace metadata stored in `.game-asset-explorer/asset-types.json`; they never replace filesystem discovery or force a folder structure. See [Asset Profiles and semantic asset types](docs/asset-profiles.md) for the file format and architecture boundary.
+
 ### Development
 
 ```bash
@@ -93,4 +110,4 @@ Prefer concrete current problems over speculative future architecture.
 
 ## Status
 
-MVP implementation in progress. Asset-directory scanning, thumbnail browsing, workspace-aware asset identity, and in-memory search are implemented.
+MVP implementation in progress. Asset-directory scanning, thumbnail browsing, workspace-aware asset identity, in-memory search, and optional genre-aware semantic asset types are implemented.
