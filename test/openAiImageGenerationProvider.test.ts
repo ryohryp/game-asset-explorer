@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createGenerationPackage, type GenerationPackage } from "../src/core/generationPackage";
 import {
+  FetchOpenAiImageTransport,
   OpenAiImageGenerationProvider,
   type OpenAiImageEditRequest,
   type OpenAiImageTransport,
@@ -79,6 +80,23 @@ test("builds an Approved Anchor edit request and returns multiple transient cand
   assert.equal(JSON.stringify(result).includes(SECRET), false);
 });
 
+test("accepts only variant Generation Packages", async () => {
+  let loaded = false;
+  let transported = false;
+  const provider = new OpenAiImageGenerationProvider({
+    apiKey: SECRET,
+    loadReference: async () => {
+      loaded = true;
+      return { bytes: Uint8Array.from([1]), mediaType: "image/png", fileName: "hero.png" };
+    },
+    transport: { async edit() { transported = true; return { data: [] }; } },
+  });
+
+  await assert.rejects(() => provider.generate(variantPackage({ intent: "edit" })), /only accepts variant/);
+  assert.equal(loaded, false);
+  assert.equal(transported, false);
+});
+
 test("requires a source Approved Anchor before loading or transporting", async () => {
   let loaded = false;
   let transported = false;
@@ -97,7 +115,7 @@ test("requires a source Approved Anchor before loading or transporting", async (
   assert.equal(transported, false);
 });
 
-test("fails clearly when credentials are missing without echoing credential content", () => {
+test("fails clearly when credentials are missing", () => {
   assert.throws(
     () => new OpenAiImageGenerationProvider({ apiKey: "   ", loadReference: async () => ({ bytes: new Uint8Array(), mediaType: "image/png", fileName: "x.png" }) }),
     /API key is required/,
@@ -131,6 +149,29 @@ test("rejects malformed provider responses without leaking credentials", async (
       throw error;
     }
   }, /malformed candidate/);
+});
+
+test("sanitizes non-success HTTP errors instead of exposing API response or key", async () => {
+  const responseBody = `server echoed ${SECRET}`;
+  const transport = new FetchOpenAiImageTransport(async () => new Response(responseBody, { status: 401 }));
+
+  await assert.rejects(async () => {
+    try {
+      await transport.edit({
+        model: "gpt-image-2.5-sunburst",
+        prompt: "variant",
+        size: "1024x1024",
+        outputFormat: "png",
+        background: "auto",
+        candidateCount: 3,
+        image: { bytes: Uint8Array.from([1]), mediaType: "image/png", fileName: "hero.png" },
+      }, SECRET);
+    } catch (error) {
+      assert.equal(String(error).includes(SECRET), false);
+      assert.equal(String(error).includes(responseBody), false);
+      throw error;
+    }
+  }, /HTTP 401/);
 });
 
 test("rejects GPT Image 2.5-incompatible dimensions before transport", async () => {
