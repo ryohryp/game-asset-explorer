@@ -1,8 +1,10 @@
 import {
   createEmptyAssetTypeMetadata,
+  getAssetCharacterAssignment,
   getAssetTypeAssignment,
   parseAssetTypeMetadata,
   serializeAssetTypeMetadata,
+  setAssetCharacterAssignment,
   setAssetTypeAssignment,
 } from "./core/assetTypeMetadata";
 import { type AssetProfile } from "./core/assetProfiles";
@@ -38,11 +40,15 @@ export async function loadWorkspaceAssetTypes(
     const assetType = metadata
       ? getAssetTypeAssignment(metadata, workspaceAsset.asset.relativePath, profile)
       : undefined;
+    const character = metadata
+      ? getAssetCharacterAssignment(metadata, workspaceAsset.asset.relativePath)
+      : undefined;
     return {
       workspaceFolderUri: workspaceAsset.workspaceFolderUri,
       workspaceFolderName: workspaceAsset.workspaceFolderName,
       asset: workspaceAsset.asset,
       ...(assetType ? { assetType } : {}),
+      ...(character ? { character } : {}),
     };
   });
 }
@@ -58,5 +64,18 @@ export async function updateWorkspaceAssetType(
     ? createEmptyAssetTypeMetadata()
     : parseAssetTypeMetadata(existingText);
   const updated = setAssetTypeAssignment(metadata, selectedAsset.asset.relativePath, assetType, profile);
+  await store.write(selectedAsset.workspaceFolderUri, serializeAssetTypeMetadata(updated));
+}
+
+export async function updateWorkspaceAssetCharacter(
+  selectedAsset: WorkspaceAsset,
+  character: string | undefined,
+  store: WorkspaceAssetTypeStore,
+): Promise<void> {
+  const existingText = await store.read(selectedAsset.workspaceFolderUri);
+  const metadata = existingText === undefined
+    ? createEmptyAssetTypeMetadata()
+    : parseAssetTypeMetadata(existingText);
+  const updated = setAssetCharacterAssignment(metadata, selectedAsset.asset.relativePath, character);
   await store.write(selectedAsset.workspaceFolderUri, serializeAssetTypeMetadata(updated));
 }

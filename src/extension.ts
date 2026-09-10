@@ -9,6 +9,7 @@ import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
 import { DebouncedAction } from "./core/debouncedAction";
 import {
   loadWorkspaceAssetTypes,
+  updateWorkspaceAssetCharacter,
   updateWorkspaceAssetType,
   type WorkspaceAssetTypeStore,
 } from "./assetTypeWorkspace";
@@ -245,6 +246,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
         activeProfile = getConfiguredAssetProfile();
         await updateWorkspaceAssetType(workspaceAsset, assetType, activeProfile, assetTypeStore);
+        return scanAndStore(false);
+      },
+      onSetCharacter: async (identity, character) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          throw new Error("Selected asset is no longer available. Refresh and try again.");
+        }
+
+        await updateWorkspaceAssetCharacter(workspaceAsset, character, assetTypeStore);
         return scanAndStore(false);
       },
       onCopyPath: async (identity) => {
