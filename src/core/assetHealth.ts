@@ -66,6 +66,11 @@ export function normalizeWorkspaceImageReference(value: string): string | undefi
     return undefined;
   }
 
+  const segments = pathOnly.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return undefined;
+  }
+
   return pathOnly;
 }
 
