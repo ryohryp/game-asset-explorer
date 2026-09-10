@@ -3,6 +3,7 @@ import test from "node:test";
 import { VisualCanonError } from "../src/core/visualCanon";
 import {
   loadWorkspaceVisualCanonForAsset,
+  resolveUnambiguousWorkspaceVisualCanon,
   resolveWorkspaceVisualCanonMembership,
   type WorkspaceVisualCanonReader,
 } from "../src/visualCanonWorkspace";
@@ -87,5 +88,58 @@ test("refuses to resolve a Canon entry that does not anchor the selected asset",
   assert.throws(
     () => resolveWorkspaceVisualCanonMembership(selected, state.canon!, "forest", [selected, asset("file:///game-a", "assets/forest.png")]),
     /not an anchor/,
+  );
+});
+
+test("unambiguous resolution preserves ordinary generation when no Canon membership exists", async () => {
+  const noCanon = await loadWorkspaceVisualCanonForAsset(selected, { read: async () => undefined });
+  assert.equal(resolveUnambiguousWorkspaceVisualCanon(selected, noCanon, [selected]), undefined);
+
+  const unrelated = await loadWorkspaceVisualCanonForAsset(selected, {
+    read: async () => JSON.stringify({
+      schemaVersion: 1,
+      entries: [{ id: "forest", kind: "environment", anchors: ["assets/forest.png"] }],
+    }),
+  });
+  assert.equal(resolveUnambiguousWorkspaceVisualCanon(selected, unrelated, [selected]), undefined);
+});
+
+test("unambiguous resolution resolves the sole selected-asset membership", async () => {
+  const state = await loadWorkspaceVisualCanonForAsset(selected, { read: async () => canonText });
+  const resolved = resolveUnambiguousWorkspaceVisualCanon(selected, state, [
+    selected,
+    asset("file:///game-a", "assets/goblin_style.png"),
+  ]);
+  assert.equal(resolved?.entry.id, "goblin");
+  assert.deepEqual(resolved?.context.constraints, ["moss-green palette"]);
+});
+
+test("unambiguous resolution fails closed when selected asset has multiple memberships", async () => {
+  const state = await loadWorkspaceVisualCanonForAsset(selected, {
+    read: async () => JSON.stringify({
+      schemaVersion: 1,
+      entries: [
+        { id: "goblin", kind: "character", anchors: ["assets/goblin_idle.png"] },
+        { id: "enemy-style", kind: "other", anchors: ["assets/goblin_idle.png"] },
+      ],
+    }),
+  });
+  assert.throws(
+    () => resolveUnambiguousWorkspaceVisualCanon(selected, state, [selected]),
+    (error: unknown) => error instanceof VisualCanonError
+      && error.message.includes("multiple Visual Canon entries")
+      && error.message.includes("goblin")
+      && error.message.includes("enemy-style"),
+  );
+});
+
+test("unambiguous resolution keeps missing anchors fail-closed and workspace-isolated", async () => {
+  const state = await loadWorkspaceVisualCanonForAsset(selected, { read: async () => canonText });
+  assert.throws(
+    () => resolveUnambiguousWorkspaceVisualCanon(selected, state, [
+      selected,
+      asset("file:///game-b", "assets/goblin_style.png"),
+    ]),
+    (error: unknown) => error instanceof VisualCanonError && error.message.includes("goblin_style.png"),
   );
 });

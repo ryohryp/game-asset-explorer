@@ -59,3 +59,25 @@ export function resolveWorkspaceVisualCanonMembership(
 
   return resolveVisualCanonEntry(canon, entryId, sameWorkspacePaths);
 }
+
+export function resolveUnambiguousWorkspaceVisualCanon(
+  selectedAsset: WorkspaceAsset,
+  state: WorkspaceVisualCanonState,
+  discoveredAssets: readonly WorkspaceAsset[],
+): ResolvedVisualCanonContext | undefined {
+  if (!state.canon || state.memberships.length === 0) {
+    return undefined;
+  }
+  if (state.memberships.length > 1) {
+    const ids = state.memberships.map((membership) => membership.id).join(", ");
+    throw new VisualCanonError(
+      `Selected asset belongs to multiple Visual Canon entries (${ids}). Choose a Canon entry before generation.`,
+    );
+  }
+  return resolveWorkspaceVisualCanonMembership(
+    selectedAsset,
+    state.canon,
+    state.memberships[0].id,
+    discoveredAssets,
+  );
+}
