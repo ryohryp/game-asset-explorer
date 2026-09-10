@@ -60,14 +60,10 @@ test("presents bounded candidates as Webview-ready data URIs", async () => {
 
 test("rejects executable or unsupported preview media types", async () => {
   const controller = new VariantReviewController(async () => {});
-  assert.throws(() => controller.begin(awaitUnsafeSession), /unsupported or unsafe/);
+  const unsafeSession = await session("image/svg+xml");
+  assert.throws(() => controller.begin(unsafeSession), /unsupported or unsafe/);
+  assert.equal(controller.hasActiveReview, false);
 });
-
-const awaitUnsafeSession = await startVariantReviewSession(
-  providerWithMediaType("image/svg+xml"),
-  packageForVariant(),
-  { availableAssetPaths: available },
-);
 
 test("approval delegates exactly the selected candidate and clears the review", async () => {
   const calls: string[] = [];
