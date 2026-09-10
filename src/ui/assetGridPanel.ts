@@ -11,6 +11,13 @@ import { AssetDetails } from "../core/assetDetails";
 import { type AssetFileType } from "../core/assetScanner";
 import { createExplorationState, reconcileExplorationState, type ExplorationState } from "../explorationState";
 import { AssetUsage } from "../usageSearch";
+import { type VariantRequestInput } from "../variantRequest";
+import { type VariantReviewView } from "../variantReviewController";
+import {
+  isRejectVariantMessage,
+  parseApproveVariantMessage,
+  parseStartVariantMessage,
+} from "../variantUiMessages";
 import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
 
 export type AssetSelectionResult =
@@ -25,6 +32,9 @@ export interface AssetGridPanelOptions {
   onCopyPath: (identity: string) => Promise<boolean>;
   onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
+  onStartVariant: (identity: string, input: VariantRequestInput) => Promise<VariantReviewView>;
+  onApproveVariant: (candidateId: string) => Promise<WorkspaceAsset[]>;
+  onRejectVariant: () => Promise<void>;
   onOpenUsage: (usage: AssetUsage) => Promise<void>;
 }
 
@@ -38,10 +48,15 @@ export class AssetGridPanel {
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
   private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   private readonly onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
+  private readonly onStartVariant: (identity: string, input: VariantRequestInput) => Promise<VariantReviewView>;
+  private readonly onApproveVariant: (candidateId: string) => Promise<WorkspaceAsset[]>;
+  private readonly onRejectVariant: () => Promise<void>;
   private readonly onOpenUsage: (usage: AssetUsage) => Promise<void>;
   private assets: WorkspaceAsset[] = [];
   private usageResults: AssetUsage[] = [];
   private healthResults: MissingAssetReference[] = [];
+  private variantReview: VariantReviewView | undefined;
+  private variantReviewIdentity: string | undefined;
   private viewState: ExplorationState = createExplorationState();
   private facets: AssetFacetSelection = {};
 
@@ -62,40 +77,31 @@ export class AssetGridPanel {
       },
     );
 
-    AssetGridPanel.currentPanel = new AssetGridPanel(
-      panel,
-      options.onRefresh,
-      options.onSearch,
-      options.onSelect,
-      options.onCopyPath,
-      options.onFindUsages,
-      options.onCheckHealth,
-      options.onOpenUsage,
-    );
+    AssetGridPanel.currentPanel = new AssetGridPanel(panel, options);
     return AssetGridPanel.currentPanel;
   }
 
-  private constructor(
-    panel: vscode.WebviewPanel,
-    onRefresh: () => Promise<WorkspaceAsset[]>,
-    onSearch: (query: string) => WorkspaceAsset[],
-    onSelect: (identity: string) => Promise<AssetSelectionResult>,
-    onCopyPath: (identity: string) => Promise<boolean>,
-    onFindUsages: (identity: string) => Promise<AssetUsage[]>,
-    onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>,
-    onOpenUsage: (usage: AssetUsage) => Promise<void>,
-  ) {
+  private constructor(panel: vscode.WebviewPanel, options: AssetGridPanelOptions) {
     this.panel = panel;
-    this.onRefresh = onRefresh;
-    this.onSearch = onSearch;
-    this.onSelect = onSelect;
-    this.onCopyPath = onCopyPath;
-    this.onFindUsages = onFindUsages;
-    this.onCheckHealth = onCheckHealth;
-    this.onOpenUsage = onOpenUsage;
+    this.onRefresh = options.onRefresh;
+    this.onSearch = options.onSearch;
+    this.onSelect = options.onSelect;
+    this.onCopyPath = options.onCopyPath;
+    this.onFindUsages = options.onFindUsages;
+    this.onCheckHealth = options.onCheckHealth;
+    this.onStartVariant = options.onStartVariant;
+    this.onApproveVariant = options.onApproveVariant;
+    this.onRejectVariant = options.onRejectVariant;
+    this.onOpenUsage = options.onOpenUsage;
 
     this.panel.onDidDispose(() => {
       AssetGridPanel.currentPanel = undefined;
+      if (this.variantReview) {
+        this.clearVariantReview();
+        void this.onRejectVariant().catch((error) => {
+          console.warn("Game Asset Explorer: Unable to discard transient Generate Variant review.", error);
+        });
+      }
     });
 
     this.panel.webview.onDidReceiveMessage(async (message: unknown) => {
@@ -123,6 +129,9 @@ export class AssetGridPanel {
       }
 
       if (isSelectMessage(message)) {
+        if (this.variantReview && this.variantReviewIdentity !== message.identity) {
+          await this.rejectActiveVariant();
+        }
         this.viewState = { ...this.viewState, selectedIdentity: message.identity };
         this.usageResults = [];
         this.healthResults = [];
@@ -131,6 +140,9 @@ export class AssetGridPanel {
           return;
         }
         await this.panel.webview.postMessage({ type: "assetDetails", result });
+        if (this.variantReview && this.variantReviewIdentity === message.identity) {
+          await this.panel.webview.postMessage({ type: "variantReviewResult", review: this.variantReview });
+        }
         return;
       }
 
@@ -157,6 +169,54 @@ export class AssetGridPanel {
         }
         this.healthResults = report?.missingReferences ?? [];
         await this.panel.webview.postMessage({ type: "assetHealthResult", report });
+        return;
+      }
+
+      const startVariant = parseStartVariantMessage(message);
+      if (startVariant) {
+        if (this.viewState.selectedIdentity !== startVariant.identity) {
+          await this.postVariantError("Selected asset changed before generation started.");
+          return;
+        }
+        try {
+          const review = await this.onStartVariant(startVariant.identity, startVariant.input);
+          if (this.viewState.selectedIdentity !== startVariant.identity) {
+            await this.onRejectVariant();
+            await this.postVariantError("Selected asset changed while generation was running; generated candidates were discarded.");
+            return;
+          }
+          this.variantReview = review;
+          this.variantReviewIdentity = startVariant.identity;
+          await this.panel.webview.postMessage({ type: "variantReviewResult", review });
+        } catch (error) {
+          await this.postVariantError(formatError(error));
+        }
+        return;
+      }
+
+      const approveVariant = parseApproveVariantMessage(message);
+      if (approveVariant) {
+        if (!this.variantReview) {
+          await this.postVariantError("No active Generate Variant review is available.");
+          return;
+        }
+        try {
+          const assets = await this.onApproveVariant(approveVariant.candidateId);
+          this.clearVariantReview();
+          this.update(assets);
+        } catch (error) {
+          await this.postVariantError(formatError(error));
+        }
+        return;
+      }
+
+      if (isRejectVariantMessage(message)) {
+        try {
+          await this.rejectActiveVariant();
+          await this.panel.webview.postMessage({ type: "variantRejected" });
+        } catch (error) {
+          await this.postVariantError(formatError(error));
+        }
         return;
       }
 
@@ -189,6 +249,12 @@ export class AssetGridPanel {
     this.healthResults = [];
     if (state.selectionStatus === "missing") {
       this.usageResults = [];
+      if (this.variantReview) {
+        this.clearVariantReview();
+        void this.onRejectVariant().catch((error) => {
+          console.warn("Game Asset Explorer: Unable to discard review for missing asset.", error);
+        });
+      }
     }
     this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets);
   }
@@ -247,6 +313,26 @@ export class AssetGridPanel {
     if (result.status === "available" && this.usageResults.length > 0) {
       await this.panel.webview.postMessage({ type: "findUsagesResult", usages: this.usageResults });
     }
+    if (result.status === "available" && this.variantReview && this.variantReviewIdentity === restoringIdentity) {
+      await this.panel.webview.postMessage({ type: "variantReviewResult", review: this.variantReview });
+    }
+  }
+
+  private async rejectActiveVariant(): Promise<void> {
+    if (!this.variantReview) {
+      return;
+    }
+    await this.onRejectVariant();
+    this.clearVariantReview();
+  }
+
+  private clearVariantReview(): void {
+    this.variantReview = undefined;
+    this.variantReviewIdentity = undefined;
+  }
+
+  private async postVariantError(message: string): Promise<void> {
+    await this.panel.webview.postMessage({ type: "variantError", message });
   }
 }
 
@@ -266,13 +352,13 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <title>Game Asset Explorer</title>
   <style>
     body { margin: 0; padding: 16px; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); }
     .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
     .search { flex: 1; min-width: 120px; max-width: 520px; border: 1px solid var(--vscode-input-border, transparent); color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 6px 8px; outline: none; }
-    .search:focus, .facet-select:focus { border-color: var(--vscode-focusBorder); }
+    .search:focus, .facet-select:focus, .variant-control:focus { border-color: var(--vscode-focusBorder); }
     .summary { margin-left: auto; color: var(--vscode-descriptionForeground); white-space: nowrap; }
     .facets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .facet-label { display: flex; align-items: center; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
@@ -284,7 +370,7 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
     button.compact { padding: 4px 8px; font-size: 0.82em; }
     button:disabled { opacity: 0.55; cursor: default; }
-    .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 18px; align-items: start; }
+    .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 18px; align-items: start; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 14px; align-items: start; }
     .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; transition: background-color 80ms ease, border-color 80ms ease, box-shadow 80ms ease; }
     .card:hover { background: var(--vscode-list-hoverBackground); }
@@ -315,8 +401,19 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .usage:hover { background: var(--vscode-list-hoverBackground); }
     .usage-path { display: block; overflow-wrap: anywhere; font-size: 0.9em; }
     .usage-location { display: block; margin-top: 2px; color: var(--vscode-descriptionForeground); font-size: 0.8em; }
+    .variant-panel { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--vscode-widget-border); }
+    .variant-form { display: grid; gap: 9px; margin-top: 10px; }
+    .variant-label { display: grid; gap: 4px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
+    .variant-control { width: 100%; box-sizing: border-box; border: 1px solid var(--vscode-input-border, transparent); color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 6px 8px; outline: none; font: inherit; }
+    textarea.variant-control { min-height: 64px; resize: vertical; }
+    .variant-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .variant-review { margin-top: 12px; }
+    .variant-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 9px; }
+    .variant-candidate { border: 1px solid var(--vscode-widget-border); border-radius: 4px; padding: 7px; background: var(--vscode-editor-background); }
+    .variant-candidate img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--vscode-editor-inactiveSelectionBackground); margin-bottom: 7px; }
+    .variant-output { margin-bottom: 8px; overflow-wrap: anywhere; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
-    @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 14px; } .grid { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
+    @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px; } .grid { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
     @media (max-width: 440px) { body { padding: 12px; } .toolbar { flex-wrap: wrap; gap: 8px; } .search { order: 1; flex-basis: 100%; max-width: none; } .summary { margin-left: 0; } .facet-label { flex: 1 1 100%; } .facet-select { flex: 1; max-width: none; } .grid { grid-template-columns: 1fr; } }
   </style>
@@ -424,6 +521,26 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
 
       if (message.type === 'assetHealthResult') {
         renderHealth(message.report);
+        return;
+      }
+
+      if (message.type === 'variantReviewResult') {
+        renderVariantReview(message.review);
+        return;
+      }
+
+      if (message.type === 'variantError') {
+        setVariantBusy(false);
+        const status = document.getElementById('variant-status');
+        if (status) status.textContent = message.message || 'Generate Variant failed.';
+        return;
+      }
+
+      if (message.type === 'variantRejected') {
+        setVariantBusy(false);
+        renderVariantReview(null);
+        const status = document.getElementById('variant-status');
+        if (status) status.textContent = 'Candidates rejected. No project asset was written.';
       }
     });
 
@@ -468,11 +585,8 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
         const isSelected = card === selectedCard;
         card.classList.toggle('selected', isSelected);
-        if (isSelected) {
-          card.setAttribute('aria-current', 'true');
-        } else {
-          card.removeAttribute('aria-current');
-        }
+        if (isSelected) card.setAttribute('aria-current', 'true');
+        else card.removeAttribute('aria-current');
       });
     }
 
@@ -504,60 +618,211 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       const actions = document.createElement('div');
       actions.className = 'details-actions';
 
-      const copyButton = document.createElement('button');
-      copyButton.type = 'button';
-      copyButton.textContent = 'Copy Asset Path';
-      copyButton.addEventListener('click', () => {
+      const copyButton = actionButton('Copy Asset Path', false, () => {
         if (selectedIdentity) vscode.postMessage({ type: 'copyPath', identity: selectedIdentity });
       });
-
-      const usagesButton = document.createElement('button');
-      usagesButton.type = 'button';
-      usagesButton.className = 'secondary';
-      usagesButton.textContent = 'Find Usages';
-      usagesButton.addEventListener('click', () => {
+      const usagesButton = actionButton('Find Usages', true, () => {
         if (!selectedIdentity) return;
         const status = document.getElementById('usage-status');
         if (status) status.textContent = 'Searching workspace…';
         vscode.postMessage({ type: 'findUsages', identity: selectedIdentity });
       });
-
-      const healthButton = document.createElement('button');
-      healthButton.type = 'button';
-      healthButton.className = 'secondary';
-      healthButton.textContent = 'Check Asset Health';
-      healthButton.addEventListener('click', () => {
+      const healthButton = actionButton('Check Asset Health', true, () => {
         if (!selectedIdentity) return;
         const status = document.getElementById('health-status');
         if (status) status.textContent = 'Checking direct workspace references…';
         vscode.postMessage({ type: 'checkHealth', identity: selectedIdentity });
       });
+      const variantButton = actionButton('Generate Variant', false, () => {
+        const form = document.getElementById('variant-form');
+        if (form) form.hidden = !form.hidden;
+      });
 
-      actions.append(copyButton, usagesButton, healthButton);
+      actions.append(copyButton, usagesButton, healthButton, variantButton);
       details.appendChild(actions);
 
-      const copyStatus = document.createElement('div');
-      copyStatus.id = 'copy-status';
-      copyStatus.className = 'status';
-      details.appendChild(copyStatus);
-
-      const usageStatus = document.createElement('div');
-      usageStatus.id = 'usage-status';
-      usageStatus.className = 'status';
-      details.appendChild(usageStatus);
-
+      const copyStatus = statusNode('copy-status');
+      const usageStatus = statusNode('usage-status');
       const usageContainer = document.createElement('div');
       usageContainer.id = 'usages';
-      details.appendChild(usageContainer);
-
-      const healthStatus = document.createElement('div');
-      healthStatus.id = 'health-status';
-      healthStatus.className = 'status';
-      details.appendChild(healthStatus);
-
+      const healthStatus = statusNode('health-status');
       const healthContainer = document.createElement('div');
       healthContainer.id = 'health';
-      details.appendChild(healthContainer);
+      details.append(copyStatus, usageStatus, usageContainer, healthStatus, healthContainer);
+      details.appendChild(createVariantPanel(asset));
+    }
+
+    function createVariantPanel(asset) {
+      const panel = document.createElement('section');
+      panel.className = 'variant-panel';
+
+      const form = document.createElement('div');
+      form.id = 'variant-form';
+      form.className = 'variant-form';
+      form.hidden = true;
+
+      const preset = selectControl('Intent', 'variant-preset', [
+        ['pose-action', 'Different pose / action'],
+        ['damage-state', 'Damage state'],
+        ['environment', 'Environment / time / weather'],
+        ['custom', 'Custom intent'],
+      ]);
+      const request = textAreaControl('Request details (required for Custom)', 'variant-request', 'Describe the desired change while preserving the Approved Anchor.');
+      const output = textControl('Output path (blank uses *_variant)', 'variant-output-path', '');
+      const size = selectControl('Output size', 'variant-size', [
+        ['1024x1024', '1024 × 1024'],
+        ['1536x1024', '1536 × 1024'],
+        ['1024x1536', '1024 × 1536'],
+      ]);
+      const formatOptions = [['', 'Same as source (GIF → PNG)'], ['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']];
+      const format = selectControl('Output format', 'variant-format', formatOptions);
+
+      const buttons = document.createElement('div');
+      buttons.className = 'variant-actions';
+      const start = actionButton('Generate 3 Candidates', false, () => {
+        if (!selectedIdentity) return;
+        setVariantBusy(true);
+        const status = document.getElementById('variant-status');
+        if (status) status.textContent = 'Generating candidates from the selected Approved Anchor…';
+        const presetValue = document.getElementById('variant-preset').value;
+        const customRequest = document.getElementById('variant-request').value;
+        const outputPath = document.getElementById('variant-output-path').value;
+        const outputSize = document.getElementById('variant-size').value;
+        const outputFormat = document.getElementById('variant-format').value;
+        vscode.postMessage({
+          type: 'startVariant',
+          identity: selectedIdentity,
+          input: {
+            preset: presetValue,
+            ...(customRequest ? { customRequest } : {}),
+            ...(outputPath ? { outputPath } : {}),
+            outputSize,
+            ...(outputFormat ? { outputFormat } : {}),
+          },
+        });
+      });
+      start.id = 'variant-start';
+      buttons.appendChild(start);
+
+      form.append(preset, request, output, size, format, buttons);
+      panel.appendChild(form);
+      panel.appendChild(statusNode('variant-status'));
+      const review = document.createElement('div');
+      review.id = 'variant-review';
+      panel.appendChild(review);
+      return panel;
+    }
+
+    function renderVariantReview(review) {
+      const container = document.getElementById('variant-review');
+      if (!container) return;
+      container.replaceChildren();
+      if (!review || !Array.isArray(review.candidates)) return;
+
+      setVariantBusy(false);
+      const status = document.getElementById('variant-status');
+      if (status) status.textContent = 'Review candidates. Nothing is written until you approve one.';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'variant-review';
+      const output = document.createElement('div');
+      output.className = 'variant-output';
+      output.textContent = 'Approval target: ' + review.outputPath;
+      wrapper.appendChild(output);
+
+      const grid = document.createElement('div');
+      grid.className = 'variant-grid';
+      review.candidates.forEach((candidate, index) => {
+        const card = document.createElement('div');
+        card.className = 'variant-candidate';
+        const image = document.createElement('img');
+        image.src = candidate.dataUri;
+        image.alt = 'Generated candidate ' + (index + 1);
+        const approve = actionButton('Approve ' + (index + 1), false, () => {
+          setVariantBusy(true);
+          const status = document.getElementById('variant-status');
+          if (status) status.textContent = 'Approving candidate and writing ' + review.outputPath + '…';
+          vscode.postMessage({ type: 'approveVariant', candidateId: candidate.id });
+        });
+        card.append(image, approve);
+        grid.appendChild(card);
+      });
+      wrapper.appendChild(grid);
+
+      const actions = document.createElement('div');
+      actions.className = 'variant-actions';
+      actions.style.marginTop = '9px';
+      const reject = actionButton('Reject All', true, () => {
+        setVariantBusy(true);
+        vscode.postMessage({ type: 'rejectVariant' });
+      });
+      actions.appendChild(reject);
+      wrapper.appendChild(actions);
+      container.appendChild(wrapper);
+    }
+
+    function setVariantBusy(busy) {
+      const start = document.getElementById('variant-start');
+      if (start) start.disabled = busy;
+      document.querySelectorAll('#variant-review button').forEach((button) => { button.disabled = busy; });
+    }
+
+    function selectControl(label, id, options) {
+      const wrapper = document.createElement('label');
+      wrapper.className = 'variant-label';
+      wrapper.textContent = label;
+      const select = document.createElement('select');
+      select.id = id;
+      select.className = 'variant-control';
+      options.forEach(([value, text]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        select.appendChild(option);
+      });
+      wrapper.appendChild(select);
+      return wrapper;
+    }
+
+    function textControl(label, id, placeholder) {
+      const wrapper = document.createElement('label');
+      wrapper.className = 'variant-label';
+      wrapper.textContent = label;
+      const input = document.createElement('input');
+      input.id = id;
+      input.className = 'variant-control';
+      input.type = 'text';
+      input.placeholder = placeholder;
+      wrapper.appendChild(input);
+      return wrapper;
+    }
+
+    function textAreaControl(label, id, placeholder) {
+      const wrapper = document.createElement('label');
+      wrapper.className = 'variant-label';
+      wrapper.textContent = label;
+      const input = document.createElement('textarea');
+      input.id = id;
+      input.className = 'variant-control';
+      input.placeholder = placeholder;
+      wrapper.appendChild(input);
+      return wrapper;
+    }
+
+    function actionButton(label, secondary, handler) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      if (secondary) button.className = 'secondary';
+      button.textContent = label;
+      button.addEventListener('click', handler);
+      return button;
+    }
+
+    function statusNode(id) {
+      const node = document.createElement('div');
+      node.id = id;
+      node.className = 'status';
+      return node;
     }
 
     function renderUsages(usages) {
@@ -569,14 +834,12 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       status.textContent = usages.length === 0
         ? 'No text usages found in this workspace.'
         : usages.length + ' usage' + (usages.length === 1 ? '' : 's') + ' found.';
-
       if (usages.length === 0) return;
 
       const heading = document.createElement('h3');
       heading.textContent = 'Usages';
       const list = document.createElement('div');
       list.className = 'usage-list';
-
       usages.forEach((usage, index) => {
         const button = document.createElement('button');
         button.type = 'button';
@@ -591,7 +854,6 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         button.addEventListener('click', () => vscode.postMessage({ type: 'openUsage', index }));
         list.appendChild(button);
       });
-
       container.append(heading, list);
     }
 
@@ -607,19 +869,18 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       }
 
       status.textContent = 'Asset Health uses direct static text evidence only; dynamic references may not be visible.';
-      const summary = document.createElement('div');
+      const summaryNode = document.createElement('div');
       const referenced = report.assetHealth.status === 'referenced';
-      summary.className = 'health-result ' + (referenced ? 'ok' : 'warning');
-      summary.textContent = referenced
+      summaryNode.className = 'health-result ' + (referenced ? 'ok' : 'warning');
+      summaryNode.textContent = referenced
         ? 'Referenced · ' + report.assetHealth.usageCount + ' direct path usage' + (report.assetHealth.usageCount === 1 ? '' : 's') + ' observed. Evidence: direct.'
         : 'Unused Candidate · no direct workspace-relative path usages observed. Evidence: candidate, not proof of being unused.';
-      container.appendChild(summary);
+      container.appendChild(summaryNode);
 
       const missingReferences = Array.isArray(report.missingReferences) ? report.missingReferences : [];
       const heading = document.createElement('h3');
       heading.textContent = 'Missing References';
       container.appendChild(heading);
-
       if (missingReferences.length === 0) {
         const none = document.createElement('div');
         none.className = 'status';
@@ -819,4 +1080,8 @@ function isIdentityMessage(message: unknown, type: string): message is { type: s
     && message.type === type
     && "identity" in message
     && typeof message.identity === "string";
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
