@@ -19,6 +19,7 @@ import { createExplorationState, reconcileExplorationState, type ExplorationStat
 import { AssetUsage } from "../usageSearch";
 import { type VariantRequestInput } from "../variantRequest";
 import { type VariantReviewView } from "../variantReviewController";
+import { type VisualCanonMembership } from "../visualCanonWorkspace";
 import {
   isRejectVariantMessage,
   parseApproveVariantMessage,
@@ -27,7 +28,7 @@ import {
 import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
 
 export type AssetSelectionResult =
-  | { status: "available"; workspaceAsset: WorkspaceAsset; details: AssetDetails }
+  | { status: "available"; workspaceAsset: WorkspaceAsset; details: AssetDetails; visualCanon?: { memberships: VisualCanonMembership[]; error?: string } }
   | { status: "missing"; workspaceAsset?: WorkspaceAsset };
 
 type AssetViewMode = "grid" | "character";
@@ -817,6 +818,7 @@ function getWebviewHtml(
       addDetailRow('Workspace', result.workspaceAsset.workspaceFolderName);
       addAssetTypeControl(result.workspaceAsset.assetType);
       addCharacterControl(result.workspaceAsset.character, selectedIdentity ? characterSuggestions[selectedIdentity] : undefined);
+      addVisualCanonDetails(result.visualCanon);
       addDetailRow('Format', asset.fileType.toUpperCase());
       addDetailRow('Size', formatBytes(result.details.sizeBytes));
       addDetailRow('Modified', new Date(result.details.modifiedAt).toLocaleString());
@@ -856,6 +858,24 @@ function getWebviewHtml(
       healthContainer.id = 'health';
       details.append(copyStatus, usageStatus, usageContainer, healthStatus, healthContainer);
       details.appendChild(createVariantPanel());
+    }
+
+    function addVisualCanonDetails(state) {
+      if (!state) {
+        addDetailRow('Visual Canon', 'None');
+        return;
+      }
+      if (state.error) {
+        addDetailRow('Visual Canon', 'Invalid · ' + state.error);
+        return;
+      }
+      const memberships = Array.isArray(state.memberships) ? state.memberships : [];
+      if (memberships.length === 0) {
+        addDetailRow('Visual Canon', 'No membership');
+        return;
+      }
+      const prefix = memberships.length === 1 ? '1 membership · ' : memberships.length + ' memberships · ';
+      addDetailRow('Visual Canon', prefix + memberships.map((membership) => membership.id + ' [' + membership.kind + '] · anchor').join(', '));
     }
 
     function addAssetTypeControl(currentType) {

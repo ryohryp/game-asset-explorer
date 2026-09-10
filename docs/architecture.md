@@ -220,7 +220,9 @@ Asset Details exposes a bounded Generate Variant flow rather than a generic prom
 
 Webview messages are treated as untrusted input and validated against the bounded intent/size/format contract before they reach the workflow. Provider credentials remain in VS Code SecretStorage and are never sent to the Webview.
 
-This flow does not define Visual Canon, persisted lineage, replace/edit transactions, provider selection UI, or rejected-candidate storage.
+Visual Canon is an optional repository-backed constraint layer stored at `.game-asset-explorer/visual-canon.json`. It describes semantic identity/style constraints while the filesystem remains authoritative for whether anchors exist. Asset Details may show Canon membership, and Generate Variant may consume Canon context only when the selected asset belongs to exactly one entry and every required anchor exists in that same workspace. Invalid Canon, missing anchors, or ambiguous membership fail closed before provider invocation. Canon authoring UI, automatic inference, and persisted generation lineage remain out of scope.
+
+This flow does not define persisted lineage, replace/edit transactions, provider selection UI, or rejected-candidate storage.
 
 ## File change tracking
 
@@ -253,7 +255,6 @@ The architecture intentionally does not define these yet:
 - duplicate detection
 - engine-specific reference parsers
 - persisted AI generation metadata and lineage
-- Visual Canon
 - provider marketplace/selection UI
 - background or batch generation
 
