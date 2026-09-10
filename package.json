@@ -20,6 +20,10 @@
       {
         "command": "gameAssetExplorer.openAssetGrid",
         "title": "Game Asset Explorer: Open Asset Grid"
+      },
+      {
+        "command": "gameAssetExplorer.setOpenAiApiKey",
+        "title": "Game Asset Explorer: Set OpenAI API Key"
       }
     ],
     "configuration": {
