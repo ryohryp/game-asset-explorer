@@ -2,10 +2,12 @@ import { isAssetTypeAllowed, type AssetProfile } from "./assetProfiles";
 import { isSupportedAssetPath } from "./assetScanner";
 
 export const ASSET_TYPE_METADATA_PATH = ".game-asset-explorer/asset-types.json";
+export const MAX_CHARACTER_NAME_LENGTH = 80;
 
 export interface AssetTypeMetadataFile {
   schemaVersion: 1;
   assignments: Record<string, string>;
+  characters: Record<string, string>;
 }
 
 export class AssetTypeMetadataError extends Error {
@@ -16,7 +18,7 @@ export class AssetTypeMetadataError extends Error {
 }
 
 export function createEmptyAssetTypeMetadata(): AssetTypeMetadataFile {
-  return { schemaVersion: 1, assignments: {} };
+  return { schemaVersion: 1, assignments: {}, characters: {} };
 }
 
 export function parseAssetTypeMetadata(text: string): AssetTypeMetadataFile {
@@ -30,13 +32,13 @@ export function parseAssetTypeMetadata(text: string): AssetTypeMetadataFile {
   if (!isPlainObject(value) || value.schemaVersion !== 1 || !isPlainObject(value.assignments)) {
     throw new AssetTypeMetadataError("Asset type metadata must use schemaVersion 1 and an assignments object.");
   }
+  if (value.characters !== undefined && !isPlainObject(value.characters)) {
+    throw new AssetTypeMetadataError("Asset character metadata must be an object when present.");
+  }
 
   const assignments: Record<string, string> = {};
   for (const [rawPath, rawType] of Object.entries(value.assignments)) {
-    const relativePath = normalizeAssetPath(rawPath);
-    if (!isSafeWorkspaceRelativeAssetPath(relativePath) || !isSupportedAssetPath(relativePath)) {
-      throw new AssetTypeMetadataError(`Invalid asset path '${rawPath}' in asset type metadata.`);
-    }
+    const relativePath = validateMetadataAssetPath(rawPath, "asset type");
     if (typeof rawType !== "string") {
       throw new AssetTypeMetadataError(`Asset type for '${rawPath}' must be a string.`);
     }
@@ -51,14 +53,26 @@ export function parseAssetTypeMetadata(text: string): AssetTypeMetadataFile {
     assignments[relativePath] = assetType;
   }
 
-  return { schemaVersion: 1, assignments };
+  const characters: Record<string, string> = {};
+  for (const [rawPath, rawCharacter] of Object.entries(value.characters ?? {})) {
+    const relativePath = validateMetadataAssetPath(rawPath, "character");
+    if (typeof rawCharacter !== "string") {
+      throw new AssetTypeMetadataError(`Character for '${rawPath}' must be a string.`);
+    }
+    const character = normalizeCharacterName(rawCharacter);
+    if (characters[relativePath] !== undefined) {
+      throw new AssetTypeMetadataError(`Duplicate normalized asset path '${relativePath}' in character metadata.`);
+    }
+    characters[relativePath] = character;
+  }
+
+  return { schemaVersion: 1, assignments, characters };
 }
 
 export function serializeAssetTypeMetadata(metadata: AssetTypeMetadataFile): string {
-  const assignments = Object.fromEntries(
-    Object.entries(metadata.assignments).sort(([left], [right]) => left.localeCompare(right)),
-  );
-  return `${JSON.stringify({ schemaVersion: 1, assignments }, null, 2)}\n`;
+  const assignments = sortRecord(metadata.assignments);
+  const characters = sortRecord(metadata.characters);
+  return `${JSON.stringify({ schemaVersion: 1, assignments, ...(Object.keys(characters).length > 0 ? { characters } : {}) }, null, 2)}\n`;
 }
 
 export function getAssetTypeAssignment(
@@ -90,7 +104,50 @@ export function setAssetTypeAssignment(
   } else {
     assignments[normalizedPath] = assetType;
   }
-  return { schemaVersion: 1, assignments };
+  return { schemaVersion: 1, assignments, characters: { ...metadata.characters } };
+}
+
+export function getCharacterAssignment(metadata: AssetTypeMetadataFile, relativePath: string): string | undefined {
+  return metadata.characters[normalizeAssetPath(relativePath)];
+}
+
+export function setCharacterAssignment(
+  metadata: AssetTypeMetadataFile,
+  relativePath: string,
+  character: string | undefined,
+): AssetTypeMetadataFile {
+  const normalizedPath = normalizeAssetPath(relativePath);
+  if (!isSafeWorkspaceRelativeAssetPath(normalizedPath) || !isSupportedAssetPath(normalizedPath)) {
+    throw new AssetTypeMetadataError("Character assignments require a supported workspace-relative image path.");
+  }
+
+  const characters = { ...metadata.characters };
+  if (character === undefined || !character.trim()) {
+    delete characters[normalizedPath];
+  } else {
+    characters[normalizedPath] = normalizeCharacterName(character);
+  }
+  return { schemaVersion: 1, assignments: { ...metadata.assignments }, characters };
+}
+
+function normalizeCharacterName(value: string): string {
+  const character = value.trim();
+  if (!character || character.length > MAX_CHARACTER_NAME_LENGTH || /[\r\n\t]/.test(character)) {
+    throw new AssetTypeMetadataError(`Character must be between 1 and ${MAX_CHARACTER_NAME_LENGTH} printable characters.`);
+  }
+  return character;
+}
+
+function validateMetadataAssetPath(rawPath: string, label: string): string {
+  const relativePath = normalizeAssetPath(rawPath);
+  if (!isSafeWorkspaceRelativeAssetPath(relativePath) || !isSupportedAssetPath(relativePath)) {
+    throw new AssetTypeMetadataError(`Invalid asset path '${rawPath}' in ${label} metadata.`);
+  }
+  return relativePath;
+}
+
+function sortRecord(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));
 }
 
 function normalizeAssetPath(value: string): string {
