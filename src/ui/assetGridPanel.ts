@@ -6,6 +6,7 @@ import {
   type AssetFacetOption,
   type AssetFacetSelection,
 } from "../assetFacets";
+import { type AssetHealthReport, type MissingAssetReference } from "../assetHealthSearch";
 import { AssetDetails } from "../core/assetDetails";
 import { type AssetFileType } from "../core/assetScanner";
 import { createExplorationState, reconcileExplorationState, type ExplorationState } from "../explorationState";
@@ -23,6 +24,7 @@ export interface AssetGridPanelOptions {
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onCopyPath: (identity: string) => Promise<boolean>;
   onFindUsages: (identity: string) => Promise<AssetUsage[]>;
+  onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
   onOpenUsage: (usage: AssetUsage) => Promise<void>;
 }
 
@@ -35,9 +37,11 @@ export class AssetGridPanel {
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
   private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
+  private readonly onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
   private readonly onOpenUsage: (usage: AssetUsage) => Promise<void>;
   private assets: WorkspaceAsset[] = [];
   private usageResults: AssetUsage[] = [];
+  private healthResults: MissingAssetReference[] = [];
   private viewState: ExplorationState = createExplorationState();
   private facets: AssetFacetSelection = {};
 
@@ -65,6 +69,7 @@ export class AssetGridPanel {
       options.onSelect,
       options.onCopyPath,
       options.onFindUsages,
+      options.onCheckHealth,
       options.onOpenUsage,
     );
     return AssetGridPanel.currentPanel;
@@ -77,6 +82,7 @@ export class AssetGridPanel {
     onSelect: (identity: string) => Promise<AssetSelectionResult>,
     onCopyPath: (identity: string) => Promise<boolean>,
     onFindUsages: (identity: string) => Promise<AssetUsage[]>,
+    onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>,
     onOpenUsage: (usage: AssetUsage) => Promise<void>,
   ) {
     this.panel = panel;
@@ -85,6 +91,7 @@ export class AssetGridPanel {
     this.onSelect = onSelect;
     this.onCopyPath = onCopyPath;
     this.onFindUsages = onFindUsages;
+    this.onCheckHealth = onCheckHealth;
     this.onOpenUsage = onOpenUsage;
 
     this.panel.onDidDispose(() => {
@@ -118,6 +125,7 @@ export class AssetGridPanel {
       if (isSelectMessage(message)) {
         this.viewState = { ...this.viewState, selectedIdentity: message.identity };
         this.usageResults = [];
+        this.healthResults = [];
         const result = await this.onSelect(message.identity);
         if (this.viewState.selectedIdentity !== message.identity) {
           return;
@@ -142,10 +150,28 @@ export class AssetGridPanel {
         return;
       }
 
+      if (isCheckHealthMessage(message)) {
+        const report = await this.onCheckHealth(message.identity);
+        if (this.viewState.selectedIdentity !== message.identity) {
+          return;
+        }
+        this.healthResults = report?.missingReferences ?? [];
+        await this.panel.webview.postMessage({ type: "assetHealthResult", report });
+        return;
+      }
+
       if (isOpenUsageMessage(message)) {
         const usage = this.usageResults[message.index];
         if (usage) {
           await this.onOpenUsage(usage);
+        }
+        return;
+      }
+
+      if (isOpenHealthResultMessage(message)) {
+        const finding = this.healthResults[message.index];
+        if (finding) {
+          await this.onOpenUsage(finding);
         }
       }
     });
@@ -160,6 +186,7 @@ export class AssetGridPanel {
       selectedIdentity: state.selectedIdentity,
       scrollY: state.scrollY,
     };
+    this.healthResults = [];
     if (state.selectionStatus === "missing") {
       this.usageResults = [];
     }
@@ -186,6 +213,7 @@ export class AssetGridPanel {
       scrollY: state.scrollY,
     };
     this.facets = reconcileAssetFacetSelection(this.facets, this.assets);
+    this.healthResults = [];
     if (state.selectionStatus === "missing") {
       this.usageResults = [];
     }
@@ -279,6 +307,9 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .details-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .status { margin-top: 8px; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
     .missing { color: var(--vscode-errorForeground); }
+    .health-result { margin-top: 10px; padding: 9px 10px; border: 1px solid var(--vscode-widget-border); border-radius: 4px; }
+    .health-result.warning { border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-widget-border)); background: var(--vscode-inputValidation-warningBackground, transparent); }
+    .health-result.ok { border-color: var(--vscode-testing-iconPassed, var(--vscode-widget-border)); }
     .usage-list { display: flex; flex-direction: column; gap: 6px; }
     .usage { width: 100%; text-align: left; color: var(--vscode-foreground); background: var(--vscode-list-inactiveSelectionBackground); border-color: transparent; }
     .usage:hover { background: var(--vscode-list-hoverBackground); }
@@ -388,6 +419,11 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
 
       if (message.type === 'findUsagesResult') {
         renderUsages(message.usages || []);
+        return;
+      }
+
+      if (message.type === 'assetHealthResult') {
+        renderHealth(message.report);
       }
     });
 
@@ -486,7 +522,18 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         vscode.postMessage({ type: 'findUsages', identity: selectedIdentity });
       });
 
-      actions.append(copyButton, usagesButton);
+      const healthButton = document.createElement('button');
+      healthButton.type = 'button';
+      healthButton.className = 'secondary';
+      healthButton.textContent = 'Check Asset Health';
+      healthButton.addEventListener('click', () => {
+        if (!selectedIdentity) return;
+        const status = document.getElementById('health-status');
+        if (status) status.textContent = 'Checking direct workspace references…';
+        vscode.postMessage({ type: 'checkHealth', identity: selectedIdentity });
+      });
+
+      actions.append(copyButton, usagesButton, healthButton);
       details.appendChild(actions);
 
       const copyStatus = document.createElement('div');
@@ -502,6 +549,15 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       const usageContainer = document.createElement('div');
       usageContainer.id = 'usages';
       details.appendChild(usageContainer);
+
+      const healthStatus = document.createElement('div');
+      healthStatus.id = 'health-status';
+      healthStatus.className = 'status';
+      details.appendChild(healthStatus);
+
+      const healthContainer = document.createElement('div');
+      healthContainer.id = 'health';
+      details.appendChild(healthContainer);
     }
 
     function renderUsages(usages) {
@@ -537,6 +593,58 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       });
 
       container.append(heading, list);
+    }
+
+    function renderHealth(report) {
+      const container = document.getElementById('health');
+      const status = document.getElementById('health-status');
+      if (!container || !status) return;
+
+      container.replaceChildren();
+      if (!report || !report.assetHealth) {
+        status.textContent = 'Asset is no longer available.';
+        return;
+      }
+
+      status.textContent = 'Asset Health uses direct static text evidence only; dynamic references may not be visible.';
+      const summary = document.createElement('div');
+      const referenced = report.assetHealth.status === 'referenced';
+      summary.className = 'health-result ' + (referenced ? 'ok' : 'warning');
+      summary.textContent = referenced
+        ? 'Referenced · ' + report.assetHealth.usageCount + ' direct path usage' + (report.assetHealth.usageCount === 1 ? '' : 's') + ' observed. Evidence: direct.'
+        : 'Unused Candidate · no direct workspace-relative path usages observed. Evidence: candidate, not proof of being unused.';
+      container.appendChild(summary);
+
+      const missingReferences = Array.isArray(report.missingReferences) ? report.missingReferences : [];
+      const heading = document.createElement('h3');
+      heading.textContent = 'Missing References';
+      container.appendChild(heading);
+
+      if (missingReferences.length === 0) {
+        const none = document.createElement('div');
+        none.className = 'status';
+        none.textContent = 'No direct missing image references found in this workspace scan.';
+        container.appendChild(none);
+        return;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'usage-list';
+      missingReferences.forEach((finding, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'usage';
+        const target = document.createElement('span');
+        target.className = 'usage-path';
+        target.textContent = finding.targetPath + ' · Missing Reference';
+        const location = document.createElement('span');
+        location.className = 'usage-location';
+        location.textContent = finding.sourcePath + ':' + (finding.line + 1) + ':' + (finding.character + 1) + ' · evidence: direct';
+        button.append(target, location);
+        button.addEventListener('click', () => vscode.postMessage({ type: 'openHealthResult', index }));
+        list.appendChild(button);
+      });
+      container.appendChild(list);
     }
 
     function addDetailRow(label, value) {
@@ -681,11 +789,23 @@ function isFindUsagesMessage(message: unknown): message is { type: "findUsages";
   return isIdentityMessage(message, "findUsages");
 }
 
+function isCheckHealthMessage(message: unknown): message is { type: "checkHealth"; identity: string } {
+  return isIdentityMessage(message, "checkHealth");
+}
+
 function isOpenUsageMessage(message: unknown): message is { type: "openUsage"; index: number } {
+  return isIndexMessage(message, "openUsage");
+}
+
+function isOpenHealthResultMessage(message: unknown): message is { type: "openHealthResult"; index: number } {
+  return isIndexMessage(message, "openHealthResult");
+}
+
+function isIndexMessage(message: unknown, type: string): message is { type: string; index: number } {
   return typeof message === "object"
     && message !== null
     && "type" in message
-    && message.type === "openUsage"
+    && message.type === type
     && "index" in message
     && typeof message.index === "number"
     && Number.isInteger(message.index)
