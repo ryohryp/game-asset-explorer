@@ -2,6 +2,7 @@ import {
   findVisualCanonEntriesForAsset,
   parseVisualCanon,
   resolveVisualCanonEntry,
+  VisualCanonError,
   type ResolvedVisualCanonContext,
   type VisualCanonEntry,
   type VisualCanonFile,
@@ -53,7 +54,7 @@ export function resolveWorkspaceVisualCanonMembership(
 
   const memberships = findVisualCanonEntriesForAsset(canon, selectedAsset.asset.relativePath);
   if (!memberships.some((entry) => entry.id === entryId)) {
-    throw new Error(`Selected asset is not an anchor of Visual Canon entry '${entryId}'.`);
+    throw new VisualCanonError(`Selected asset is not an anchor of Visual Canon entry '${entryId}'.`);
   }
 
   return resolveVisualCanonEntry(canon, entryId, sameWorkspacePaths);
