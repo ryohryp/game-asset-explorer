@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { DebouncedAction } from "./core/debouncedAction";
@@ -170,6 +171,14 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         return findWorkspaceAssetUsages(workspaceAsset);
+      },
+      onCheckHealth: async (identity) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          return undefined;
+        }
+
+        return inspectWorkspaceAssetHealth(workspaceAsset, discoveredAssets);
       },
       onOpenUsage: openAssetUsage,
     });

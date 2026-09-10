@@ -1,6 +1,6 @@
 # MVP Architecture
 
-This document describes the current architecture for Game Asset Explorer. It is intentionally limited to decisions needed for the MVP.
+This document describes the current architecture for Game Asset Explorer. It is intentionally limited to decisions needed for the MVP and validated post-MVP extensions.
 
 ## Goals
 
@@ -22,6 +22,7 @@ Core owns:
 - filename/path filtering and search logic
 - filesystem-derived asset metadata when needed
 - reusable usage-matching logic that can operate on supplied text/search results
+- reusable direct-reference extraction and Asset Health classification
 
 Core does not own:
 
@@ -42,15 +43,15 @@ The VS Code layer owns:
 - combining multi-root workspace results
 - commands and editor actions
 - file-system watchers
-- VS Code workspace search for Find Usages
-- opening files and navigating to usage locations
+- VS Code workspace search for Find Usages and on-demand Asset Health
+- opening files and navigating to usage/health locations
 - translating filesystem paths to Webview-safe URIs
 
 ### UI (`src/ui`)
 
 UI code owns presentation and user interaction only.
 
-It should receive prepared asset/view data and emit explicit actions such as refresh, select asset, copy path, or find usages. It should not recursively scan directories or implement reference analysis itself.
+It should receive prepared asset/view data and emit explicit actions such as refresh, select asset, copy path, find usages, or check health. It should not recursively scan directories or implement reference analysis itself.
 
 ## Asset model
 
@@ -153,6 +154,21 @@ False positives are acceptable in the MVP; hidden false negatives caused by pret
 
 The search executor belongs to the VS Code layer. Candidate generation and result normalization may live in core if they remain VS Code-independent.
 
+## Asset Health
+
+Post-MVP Asset Health extends the same bounded workspace text-search model rather than introducing a persistent reference graph.
+
+Asset Health runs only when explicitly requested from Asset Details. It reads the same bounded set of workspace text files used by Find Usages and discards the result after use.
+
+Current semantics are deliberately conservative:
+
+- `Referenced` means at least one direct workspace-relative image path to the selected asset was observed in static text.
+- `Unused Candidate` means no such direct usage was observed. It is a candidate signal, not proof that the asset is unused; dynamic references may exist.
+- `Missing Reference` means a quoted image path resolves deterministically as a workspace-relative path but no discovered asset has that relative path in the same workspace.
+- dynamic/interpolated strings, external URLs, parent-relative paths, and ambiguous filename-only strings are not treated as deterministic missing references.
+
+Health analysis is isolated per workspace folder in multi-root workspaces. It does not create a database, cache, manifest, stable ID, persistent graph, or background index.
+
 ## File change tracking
 
 The watcher is a VS Code concern.
@@ -170,7 +186,7 @@ Prefer a simple debounced rescan before implementing a complex incremental index
 
 The in-memory discovered asset list is derived state, not authoritative data. It may be rebuilt at any time from the filesystem and current workspace configuration.
 
-No database or cache file is required for the MVP.
+No database or cache file is required for the MVP or current ephemeral Asset Health workflow.
 
 ## Explicitly deferred
 
@@ -179,8 +195,7 @@ The architecture intentionally does not define these yet:
 - manifest schema
 - stable asset IDs
 - persistent tags
-- unused-asset semantics
-- missing-reference semantics
+- persistent reference graph/index
 - safe rename/replace transactions
 - duplicate detection
 - engine-specific reference parsers
