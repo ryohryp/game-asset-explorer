@@ -63,6 +63,9 @@ export class OpenAiImageGenerationProvider implements ImageGenerationProvider {
   }
 
   async generate(generationPackage: GenerationPackage): Promise<ImageGenerationProviderResult> {
+    if (generationPackage.intent !== "variant") {
+      throw new Error("OpenAI Generate Variant provider only accepts variant Generation Packages.");
+    }
     const source = generationPackage.references.find(
       (reference) => reference.role === "source" && reference.required,
     );
@@ -135,7 +138,9 @@ function assertSupportedSize(width: number, height: number): void {
   }
 }
 
-class FetchOpenAiImageTransport implements OpenAiImageTransport {
+export class FetchOpenAiImageTransport implements OpenAiImageTransport {
+  constructor(private readonly fetcher: typeof fetch = fetch) {}
+
   async edit(request: OpenAiImageEditRequest, apiKey: string): Promise<OpenAiImageEditResponse> {
     const form = new FormData();
     form.append("model", request.model);
@@ -147,7 +152,7 @@ class FetchOpenAiImageTransport implements OpenAiImageTransport {
     const uploadBuffer = Uint8Array.from(request.image.bytes).buffer;
     form.append("image[]", new Blob([uploadBuffer], { type: request.image.mediaType }), request.image.fileName);
 
-    const response = await fetch(ENDPOINT, {
+    const response = await this.fetcher(ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
