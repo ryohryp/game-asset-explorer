@@ -27,13 +27,10 @@ export interface AssetHealthReport {
 export async function inspectWorkspaceAssetHealth(
   workspaceAsset: WorkspaceAsset,
   allAssets: readonly WorkspaceAsset[],
-): Promise<AssetHealthReport> {
+): Promise<AssetHealthReport | undefined> {
   const workspaceFolder = getWorkspaceFolderForAsset(workspaceAsset);
   if (!workspaceFolder) {
-    return {
-      assetHealth: classifyAssetUsageHealth(0),
-      missingReferences: [],
-    };
+    return undefined;
   }
 
   const files = await readWorkspaceTextFiles(workspaceFolder);
