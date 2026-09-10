@@ -24,24 +24,26 @@ function packageForVariant() {
   });
 }
 
-const provider: ImageGenerationProvider = {
-  id: "fake",
-  async generate() {
-    return {
-      model: "fake-model",
-      candidates: [1, 2].map((value) => ({
-        id: `candidate-${value}`,
-        mediaType: "image/png",
-        bytes: Uint8Array.from([value, 42]),
-        width: 1024,
-        height: 1024,
-      })),
-    };
-  },
-};
+function providerWithMediaType(mediaType = "image/png"): ImageGenerationProvider {
+  return {
+    id: "fake",
+    async generate() {
+      return {
+        model: "fake-model",
+        candidates: [1, 2].map((value) => ({
+          id: `candidate-${value}`,
+          mediaType,
+          bytes: Uint8Array.from([value, 42]),
+          width: 1024,
+          height: 1024,
+        })),
+      };
+    },
+  };
+}
 
-async function session() {
-  return startVariantReviewSession(provider, packageForVariant(), { availableAssetPaths: available });
+async function session(mediaType = "image/png") {
+  return startVariantReviewSession(providerWithMediaType(mediaType), packageForVariant(), { availableAssetPaths: available });
 }
 
 test("presents bounded candidates as Webview-ready data URIs", async () => {
@@ -55,6 +57,17 @@ test("presents bounded candidates as Webview-ready data URIs", async () => {
   assert.equal(review.candidates[0].byteLength, 2);
   assert.equal(controller.hasActiveReview, true);
 });
+
+test("rejects executable or unsupported preview media types", async () => {
+  const controller = new VariantReviewController(async () => {});
+  assert.throws(() => controller.begin(awaitUnsafeSession), /unsupported or unsafe/);
+});
+
+const awaitUnsafeSession = await startVariantReviewSession(
+  providerWithMediaType("image/svg+xml"),
+  packageForVariant(),
+  { availableAssetPaths: available },
+);
 
 test("approval delegates exactly the selected candidate and clears the review", async () => {
   const calls: string[] = [];
