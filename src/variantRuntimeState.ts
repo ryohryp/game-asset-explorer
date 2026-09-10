@@ -11,10 +11,3 @@ export function getGenerationValidationContext(
       .map((asset) => asset.asset.relativePath),
   };
 }
-
-export function belongsToSelectedWorkspace(
-  selectedAsset: WorkspaceAsset,
-  candidate: WorkspaceAsset,
-): boolean {
-  return candidate.workspaceFolderUri === selectedAsset.workspaceFolderUri;
-}
