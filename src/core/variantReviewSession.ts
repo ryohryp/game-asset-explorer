@@ -33,7 +33,7 @@ export class VariantReviewSession {
   readonly generationPackage: GenerationPackage;
   readonly receipt: GenerationInvocationReceipt;
   readonly candidates: readonly VariantCandidateSummary[];
-  private readonly generatedCandidates: readonly GeneratedImageCandidate[];
+  private generatedCandidates: GeneratedImageCandidate[];
   private statusValue: VariantReviewStatus = "reviewing";
 
   constructor(
@@ -43,7 +43,7 @@ export class VariantReviewSession {
   ) {
     this.generationPackage = generationPackage;
     this.receipt = receipt;
-    this.generatedCandidates = generatedCandidates;
+    this.generatedCandidates = [...generatedCandidates];
     this.candidates = generatedCandidates.map((candidate) => ({
       id: candidate.id,
       mediaType: candidate.mediaType,
@@ -59,6 +59,7 @@ export class VariantReviewSession {
 
   reject(): void {
     this.assertReviewing();
+    this.generatedCandidates = [];
     this.statusValue = "rejected";
   }
 
@@ -76,6 +77,7 @@ export class VariantReviewSession {
     }
 
     await context.writer.write(outputPath, candidate.bytes);
+    this.generatedCandidates = [];
     this.statusValue = "approved";
   }
 
