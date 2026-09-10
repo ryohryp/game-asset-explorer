@@ -8,6 +8,10 @@ import {
 } from "../assetFacets";
 import { type AssetHealthReport, type MissingAssetReference } from "../assetHealthSearch";
 import { AssetDetails } from "../core/assetDetails";
+import {
+  UNCATEGORIZED_ASSET_TYPE_LABEL,
+  type AssetProfile,
+} from "../core/assetProfiles";
 import { type AssetFileType } from "../core/assetScanner";
 import { createExplorationState, reconcileExplorationState, type ExplorationState } from "../explorationState";
 import { AssetUsage } from "../usageSearch";
@@ -26,9 +30,11 @@ export type AssetSelectionResult =
 
 export interface AssetGridPanelOptions {
   extensionUri: vscode.Uri;
+  assetProfile: AssetProfile;
   onRefresh: () => Promise<WorkspaceAsset[]>;
   onSearch: (query: string) => WorkspaceAsset[];
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
+  onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   onCopyPath: (identity: string) => Promise<boolean>;
   onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
@@ -45,6 +51,7 @@ export class AssetGridPanel {
   private readonly onRefresh: () => Promise<WorkspaceAsset[]>;
   private readonly onSearch: (query: string) => WorkspaceAsset[];
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
+  private readonly onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
   private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   private readonly onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
@@ -52,6 +59,7 @@ export class AssetGridPanel {
   private readonly onApproveVariant: (candidateId: string) => Promise<WorkspaceAsset[]>;
   private readonly onRejectVariant: () => Promise<void>;
   private readonly onOpenUsage: (usage: AssetUsage) => Promise<void>;
+  private assetProfile: AssetProfile;
   private assets: WorkspaceAsset[] = [];
   private usageResults: AssetUsage[] = [];
   private healthResults: MissingAssetReference[] = [];
@@ -84,9 +92,11 @@ export class AssetGridPanel {
 
   private constructor(panel: vscode.WebviewPanel, options: AssetGridPanelOptions) {
     this.panel = panel;
+    this.assetProfile = options.assetProfile;
     this.onRefresh = options.onRefresh;
     this.onSearch = options.onSearch;
     this.onSelect = options.onSelect;
+    this.onSetAssetType = options.onSetAssetType;
     this.onCopyPath = options.onCopyPath;
     this.onFindUsages = options.onFindUsages;
     this.onCheckHealth = options.onCheckHealth;
@@ -118,7 +128,7 @@ export class AssetGridPanel {
 
       if (isFilterMessage(message)) {
         this.viewState = { ...this.viewState, query: message.query };
-        this.facets = reconcileAssetFacetSelection(message.facets, this.assets);
+        this.facets = reconcileAssetFacetSelection(message.facets, this.assets, this.assetProfile.assetTypes);
         await this.postFilterResults(message.query);
         return;
       }
@@ -142,6 +152,22 @@ export class AssetGridPanel {
         await this.panel.webview.postMessage({ type: "assetDetails", result });
         if (this.variantReview && this.variantReviewIdentity === message.identity) {
           await this.panel.webview.postMessage({ type: "variantReviewResult", review: this.variantReview });
+        }
+        return;
+      }
+
+      if (isSetAssetTypeMessage(message)) {
+        if (this.viewState.selectedIdentity !== message.identity) {
+          await this.postAssetTypeError("Selected asset changed before the type was saved.");
+          return;
+        }
+        try {
+          const assets = await this.onSetAssetType(message.identity, message.assetType);
+          if (!this.disposed) {
+            this.update(assets);
+          }
+        } catch (error) {
+          await this.postAssetTypeError(formatError(error));
         }
         return;
       }
@@ -244,12 +270,13 @@ export class AssetGridPanel {
     });
   }
 
-  update(assets: readonly WorkspaceAsset[]): void {
+  update(assets: readonly WorkspaceAsset[], assetProfile: AssetProfile = this.assetProfile): void {
     if (this.disposed) {
       return;
     }
+    this.assetProfile = assetProfile;
     this.assets = [...assets];
-    this.facets = reconcileAssetFacetSelection(this.facets, this.assets);
+    this.facets = reconcileAssetFacetSelection(this.facets, this.assets, this.assetProfile.assetTypes);
     const state = reconcileExplorationState(this.viewState, this.assets);
     this.viewState = {
       query: state.query,
@@ -266,7 +293,7 @@ export class AssetGridPanel {
         });
       }
     }
-    this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets);
+    this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets, this.assetProfile);
   }
 
   private async postFilterResults(query: string): Promise<void> {
@@ -291,7 +318,7 @@ export class AssetGridPanel {
       selectedIdentity: state.selectedIdentity,
       scrollY: state.scrollY,
     };
-    this.facets = reconcileAssetFacetSelection(this.facets, this.assets);
+    this.facets = reconcileAssetFacetSelection(this.facets, this.assets, this.assetProfile.assetTypes);
     this.healthResults = [];
     if (state.selectionStatus === "missing") {
       this.usageResults = [];
@@ -349,18 +376,29 @@ export class AssetGridPanel {
       await this.panel.webview.postMessage({ type: "variantError", message });
     }
   }
+
+  private async postAssetTypeError(message: string): Promise<void> {
+    if (!this.disposed) {
+      await this.panel.webview.postMessage({ type: "assetTypeError", message });
+    }
+  }
 }
 
-function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset[]): string {
+function getWebviewHtml(
+  webview: vscode.Webview,
+  assets: readonly WorkspaceAsset[],
+  assetProfile: AssetProfile,
+): string {
   const nonce = createNonce();
   const cards = assets.map((asset) => renderAssetCard(webview, asset)).join("\n");
-  const facetOptions = buildAssetFacetOptions(assets);
+  const facetOptions = buildAssetFacetOptions(assets, assetProfile.assetTypes);
   const workspaceFacet = facetOptions.workspaces.length > 1
     ? renderFacetSelect("workspace-filter", "Workspace", facetOptions.workspaces)
     : "";
   const body = assets.length === 0
     ? `<div class="empty"><strong>No image assets found.</strong><span>Configure <code>gameAssetExplorer.assetDirectories</code> and refresh.</span></div>`
     : `<div class="content"><div class="grid">${cards}</div><aside id="details" class="details" hidden></aside></div>`;
+  const serializedProfile = serializeForScript({ label: assetProfile.label, assetTypes: assetProfile.assetTypes });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -378,13 +416,15 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .facets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .facet-label { display: flex; align-items: center; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
     .facet-select { max-width: 230px; min-width: 105px; border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, transparent)); color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-input-background)); padding: 4px 24px 4px 6px; outline: none; }
-    .filter-status { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
+    .detail-select { width: 100%; max-width: none; box-sizing: border-box; }
+    .filter-status, .profile-status { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
+    .profile-status { padding: 3px 7px; border: 1px solid var(--vscode-widget-border); border-radius: 10px; }
     button { border: 1px solid var(--vscode-button-border, transparent); color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 6px 12px; border-radius: 2px; cursor: pointer; }
     button:hover { background: var(--vscode-button-hoverBackground); }
     button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
     button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
     button.compact { padding: 4px 8px; font-size: 0.82em; }
-    button:disabled { opacity: 0.55; cursor: default; }
+    button:disabled, select:disabled { opacity: 0.55; cursor: default; }
     .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 18px; align-items: start; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 14px; align-items: start; }
     .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; transition: background-color 80ms ease, border-color 80ms ease, box-shadow 80ms ease; }
@@ -398,12 +438,13 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .broken { display: none; color: var(--vscode-descriptionForeground); text-align: center; padding: 12px; }
     .meta { padding: 9px 10px 10px; }
     .name { display: -webkit-box; min-height: 2.5em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-weight: 600; line-height: 1.25; }
+    .asset-type { margin-top: 6px; font-size: 0.78em; font-weight: 600; color: var(--vscode-descriptionForeground); }
     .path { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
     .details { position: sticky; top: 16px; border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 14px; background: var(--vscode-sideBar-background); }
     .details h2 { margin: 0 0 12px; font-size: 1.05rem; }
     .details h3 { margin: 16px 0 8px; font-size: 0.95rem; }
     .detail-row { margin: 10px 0; }
-    .detail-label { display: block; color: var(--vscode-descriptionForeground); font-size: 0.8em; margin-bottom: 2px; }
+    .detail-label { display: block; color: var(--vscode-descriptionForeground); font-size: 0.8em; margin-bottom: 4px; }
     .detail-value { overflow-wrap: anywhere; }
     .details-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .status { margin-top: 8px; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
@@ -441,19 +482,23 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
   </div>
   <div class="facets" aria-label="Asset filters">
     ${renderFacetSelect("folder-filter", "Folder", facetOptions.folders)}
-    ${renderFacetSelect("type-filter", "Type", facetOptions.fileTypes)}
+    ${renderFacetSelect("asset-type-filter", "Asset Type", facetOptions.assetTypes)}
+    ${renderFacetSelect("format-filter", "Format", facetOptions.fileTypes)}
     ${workspaceFacet}
     <button id="clear-filters" class="secondary compact" type="button">Clear filters</button>
     <span id="filter-status" class="filter-status">No facet filters</span>
+    <span class="profile-status">Profile: ${escapeHtml(assetProfile.label)}</span>
   </div>
   ${body}
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    const assetProfile = ${serializedProfile};
     const search = document.getElementById('search');
     const summary = document.getElementById('summary');
     const details = document.getElementById('details');
     const folderFilter = document.getElementById('folder-filter');
-    const typeFilter = document.getElementById('type-filter');
+    const assetTypeFilter = document.getElementById('asset-type-filter');
+    const formatFilter = document.getElementById('format-filter');
     const workspaceFilter = document.getElementById('workspace-filter');
     const clearFilters = document.getElementById('clear-filters');
     const filterStatus = document.getElementById('filter-status');
@@ -462,10 +507,13 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
     search.addEventListener('input', sendFilter);
-    [folderFilter, typeFilter, workspaceFilter].filter(Boolean).forEach((control) => control.addEventListener('change', sendFilter));
+    [folderFilter, assetTypeFilter, formatFilter, workspaceFilter]
+      .filter(Boolean)
+      .forEach((control) => control.addEventListener('change', sendFilter));
     clearFilters.addEventListener('click', () => {
       if (folderFilter) folderFilter.value = '';
-      if (typeFilter) typeFilter.value = '';
+      if (assetTypeFilter) assetTypeFilter.value = '';
+      if (formatFilter) formatFilter.value = '';
       if (workspaceFilter) workspaceFilter.value = '';
       sendFilter();
     });
@@ -523,6 +571,14 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         return;
       }
 
+      if (message.type === 'assetTypeError') {
+        const select = document.getElementById('asset-type-select');
+        if (select) select.disabled = false;
+        const status = document.getElementById('asset-type-status');
+        if (status) status.textContent = message.message || 'Unable to save asset type.';
+        return;
+      }
+
       if (message.type === 'copyPathResult') {
         const status = document.getElementById('copy-status');
         if (status) status.textContent = message.copied ? 'Path copied.' : 'Asset is no longer available.';
@@ -562,7 +618,8 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     function currentFacets() {
       return {
         folder: folderFilter && folderFilter.value ? folderFilter.value : undefined,
-        fileType: typeFilter && typeFilter.value ? typeFilter.value : undefined,
+        assetType: assetTypeFilter && assetTypeFilter.value ? assetTypeFilter.value : undefined,
+        fileType: formatFilter && formatFilter.value ? formatFilter.value : undefined,
         workspaceFolderUri: workspaceFilter && workspaceFilter.value ? workspaceFilter.value : undefined,
       };
     }
@@ -574,14 +631,15 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
 
     function applyFacetState(facets) {
       if (folderFilter) folderFilter.value = facets.folder || '';
-      if (typeFilter) typeFilter.value = facets.fileType || '';
+      if (assetTypeFilter) assetTypeFilter.value = facets.assetType || '';
+      if (formatFilter) formatFilter.value = facets.fileType || '';
       if (workspaceFilter) workspaceFilter.value = facets.workspaceFolderUri || '';
       updateFilterStatus();
     }
 
     function updateFilterStatus() {
       const facets = currentFacets();
-      const count = [facets.folder, facets.fileType, facets.workspaceFolderUri].filter(Boolean).length;
+      const count = [facets.folder, facets.assetType, facets.fileType, facets.workspaceFolderUri].filter(Boolean).length;
       filterStatus.textContent = count === 0 ? 'No facet filters' : count + ' active filter' + (count === 1 ? '' : 's');
       clearFilters.disabled = count === 0;
     }
@@ -626,7 +684,8 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       details.appendChild(heading);
       addDetailRow('Path', asset.relativePath);
       addDetailRow('Workspace', result.workspaceAsset.workspaceFolderName);
-      addDetailRow('Type', asset.fileType.toUpperCase());
+      addAssetTypeControl(result.workspaceAsset.assetType);
+      addDetailRow('Format', asset.fileType.toUpperCase());
       addDetailRow('Size', formatBytes(result.details.sizeBytes));
       addDetailRow('Modified', new Date(result.details.modifiedAt).toLocaleString());
 
@@ -665,6 +724,45 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       healthContainer.id = 'health';
       details.append(copyStatus, usageStatus, usageContainer, healthStatus, healthContainer);
       details.appendChild(createVariantPanel());
+    }
+
+    function addAssetTypeControl(currentType) {
+      const row = document.createElement('div');
+      row.className = 'detail-row';
+      const label = document.createElement('label');
+      label.className = 'detail-label';
+      label.htmlFor = 'asset-type-select';
+      label.textContent = 'Asset Type · ' + assetProfile.label;
+      const select = document.createElement('select');
+      select.id = 'asset-type-select';
+      select.className = 'facet-select detail-select';
+
+      const uncategorized = document.createElement('option');
+      uncategorized.value = '';
+      uncategorized.textContent = '${escapeJsSingleQuoted(UNCATEGORIZED_ASSET_TYPE_LABEL)}';
+      select.appendChild(uncategorized);
+      assetProfile.assetTypes.forEach((assetType) => {
+        const option = document.createElement('option');
+        option.value = assetType;
+        option.textContent = assetType;
+        select.appendChild(option);
+      });
+      select.value = typeof currentType === 'string' && assetProfile.assetTypes.includes(currentType) ? currentType : '';
+      select.addEventListener('change', () => {
+        if (!selectedIdentity) return;
+        select.disabled = true;
+        const status = document.getElementById('asset-type-status');
+        if (status) status.textContent = 'Saving type…';
+        vscode.postMessage({
+          type: 'setAssetType',
+          identity: selectedIdentity,
+          assetType: select.value || undefined,
+        });
+      });
+
+      const status = statusNode('asset-type-status');
+      row.append(label, select, status);
+      details.appendChild(row);
     }
 
     function createVariantPanel() {
@@ -979,7 +1077,8 @@ function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset
   const imageUri = webview.asWebviewUri(vscode.Uri.file(asset.absolutePath));
   const identity = getWorkspaceAssetIdentity(workspaceAsset);
   const displayPath = `${workspaceAsset.workspaceFolderName}: ${asset.relativePath}`;
-  const accessibleLabel = `Show details for ${asset.fileName}, ${displayPath}`;
+  const assetType = workspaceAsset.assetType ?? UNCATEGORIZED_ASSET_TYPE_LABEL;
+  const accessibleLabel = `Show details for ${asset.fileName}, ${assetType}, ${displayPath}`;
   return `<article class="card" tabindex="0" role="button" aria-label="${escapeHtml(accessibleLabel)}" data-asset-key="${escapeHtml(identity)}">
     <div class="preview">
       <img data-fallback src="${escapeHtml(imageUri.toString())}" alt="${escapeHtml(asset.fileName)}">
@@ -987,6 +1086,7 @@ function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset
     </div>
     <div class="meta">
       <div class="name" title="${escapeHtml(asset.fileName)}">${escapeHtml(asset.fileName)}</div>
+      <div class="asset-type">${escapeHtml(assetType)}</div>
       <div class="path" title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</div>
     </div>
   </article>`;
@@ -999,6 +1099,19 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function serializeForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}
+
+function escapeJsSingleQuoted(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 }
 
 function createNonce(): string {
@@ -1032,8 +1145,14 @@ function isAssetFacetSelection(value: unknown): value is AssetFacetSelection {
   if (typeof value !== "object" || value === null) {
     return false;
   }
-  const facet = value as { folder?: unknown; fileType?: unknown; workspaceFolderUri?: unknown };
+  const facet = value as {
+    folder?: unknown;
+    assetType?: unknown;
+    fileType?: unknown;
+    workspaceFolderUri?: unknown;
+  };
   return isOptionalString(facet.folder)
+    && isOptionalString(facet.assetType)
     && (facet.fileType === undefined || isAssetFileType(facet.fileType))
     && isOptionalString(facet.workspaceFolderUri);
 }
@@ -1059,6 +1178,16 @@ function isScrollMessage(message: unknown): message is { type: "scroll"; scrollY
 
 function isSelectMessage(message: unknown): message is { type: "select"; identity: string } {
   return isIdentityMessage(message, "select");
+}
+
+function isSetAssetTypeMessage(message: unknown): message is { type: "setAssetType"; identity: string; assetType?: string } {
+  if (!isIdentityMessage(message, "setAssetType")) {
+    return false;
+  }
+  if (!("assetType" in message) || message.assetType === undefined) {
+    return true;
+  }
+  return typeof message.assetType === "string" && message.assetType.length <= 64;
 }
 
 function isCopyPathMessage(message: unknown): message is { type: "copyPath"; identity: string } {
