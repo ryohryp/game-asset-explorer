@@ -59,6 +59,7 @@ export class AssetGridPanel {
   private variantReviewIdentity: string | undefined;
   private viewState: ExplorationState = createExplorationState();
   private facets: AssetFacetSelection = {};
+  private disposed = false;
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
     if (AssetGridPanel.currentPanel) {
@@ -95,13 +96,12 @@ export class AssetGridPanel {
     this.onOpenUsage = options.onOpenUsage;
 
     this.panel.onDidDispose(() => {
+      this.disposed = true;
       AssetGridPanel.currentPanel = undefined;
-      if (this.variantReview) {
-        this.clearVariantReview();
-        void this.onRejectVariant().catch((error) => {
-          console.warn("Game Asset Explorer: Unable to discard transient Generate Variant review.", error);
-        });
-      }
+      this.clearVariantReview();
+      void this.onRejectVariant().catch((error) => {
+        console.warn("Game Asset Explorer: Unable to discard transient Generate Variant state.", error);
+      });
     });
 
     this.panel.webview.onDidReceiveMessage(async (message: unknown) => {
@@ -136,7 +136,7 @@ export class AssetGridPanel {
         this.usageResults = [];
         this.healthResults = [];
         const result = await this.onSelect(message.identity);
-        if (this.viewState.selectedIdentity !== message.identity) {
+        if (this.viewState.selectedIdentity !== message.identity || this.disposed) {
           return;
         }
         await this.panel.webview.postMessage({ type: "assetDetails", result });
@@ -154,7 +154,7 @@ export class AssetGridPanel {
 
       if (isFindUsagesMessage(message)) {
         const usages = await this.onFindUsages(message.identity);
-        if (this.viewState.selectedIdentity !== message.identity) {
+        if (this.viewState.selectedIdentity !== message.identity || this.disposed) {
           return;
         }
         this.usageResults = usages;
@@ -164,7 +164,7 @@ export class AssetGridPanel {
 
       if (isCheckHealthMessage(message)) {
         const report = await this.onCheckHealth(message.identity);
-        if (this.viewState.selectedIdentity !== message.identity) {
+        if (this.viewState.selectedIdentity !== message.identity || this.disposed) {
           return;
         }
         this.healthResults = report?.missingReferences ?? [];
@@ -180,9 +180,12 @@ export class AssetGridPanel {
         }
         try {
           const review = await this.onStartVariant(startVariant.identity, startVariant.input);
-          if (this.viewState.selectedIdentity !== startVariant.identity) {
+          if (this.disposed || this.viewState.selectedIdentity !== startVariant.identity) {
             await this.onRejectVariant();
-            await this.postVariantError("Selected asset changed while generation was running; generated candidates were discarded.");
+            this.clearVariantReview();
+            if (!this.disposed) {
+              await this.postVariantError("Selected asset changed while generation was running; generated candidates were discarded.");
+            }
             return;
           }
           this.variantReview = review;
@@ -203,7 +206,9 @@ export class AssetGridPanel {
         try {
           const assets = await this.onApproveVariant(approveVariant.candidateId);
           this.clearVariantReview();
-          this.update(assets);
+          if (!this.disposed) {
+            this.update(assets);
+          }
         } catch (error) {
           await this.postVariantError(formatError(error));
         }
@@ -213,7 +218,9 @@ export class AssetGridPanel {
       if (isRejectVariantMessage(message)) {
         try {
           await this.rejectActiveVariant();
-          await this.panel.webview.postMessage({ type: "variantRejected" });
+          if (!this.disposed) {
+            await this.panel.webview.postMessage({ type: "variantRejected" });
+          }
         } catch (error) {
           await this.postVariantError(formatError(error));
         }
@@ -238,6 +245,9 @@ export class AssetGridPanel {
   }
 
   update(assets: readonly WorkspaceAsset[]): void {
+    if (this.disposed) {
+      return;
+    }
     this.assets = [...assets];
     this.facets = reconcileAssetFacetSelection(this.facets, this.assets);
     const state = reconcileExplorationState(this.viewState, this.assets);
@@ -272,6 +282,9 @@ export class AssetGridPanel {
   }
 
   private async restoreViewState(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
     const state = reconcileExplorationState(this.viewState, this.assets);
     this.viewState = {
       query: state.query,
@@ -303,7 +316,7 @@ export class AssetGridPanel {
 
     const restoringIdentity = state.selectedIdentity;
     const result = await this.onSelect(restoringIdentity);
-    if (this.viewState.selectedIdentity !== restoringIdentity) {
+    if (this.viewState.selectedIdentity !== restoringIdentity || this.disposed) {
       return;
     }
     if (result.status !== "available") {
@@ -332,7 +345,9 @@ export class AssetGridPanel {
   }
 
   private async postVariantError(message: string): Promise<void> {
-    await this.panel.webview.postMessage({ type: "variantError", message });
+    if (!this.disposed) {
+      await this.panel.webview.postMessage({ type: "variantError", message });
+    }
   }
 }
 
@@ -649,10 +664,10 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       const healthContainer = document.createElement('div');
       healthContainer.id = 'health';
       details.append(copyStatus, usageStatus, usageContainer, healthStatus, healthContainer);
-      details.appendChild(createVariantPanel(asset));
+      details.appendChild(createVariantPanel());
     }
 
-    function createVariantPanel(asset) {
+    function createVariantPanel() {
       const panel = document.createElement('section');
       panel.className = 'variant-panel';
 
@@ -674,8 +689,12 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         ['1536x1024', '1536 × 1024'],
         ['1024x1536', '1024 × 1536'],
       ]);
-      const formatOptions = [['', 'Same as source (GIF → PNG)'], ['png', 'PNG'], ['jpeg', 'JPEG'], ['webp', 'WebP']];
-      const format = selectControl('Output format', 'variant-format', formatOptions);
+      const format = selectControl('Output format', 'variant-format', [
+        ['', 'Same as source (GIF → PNG)'],
+        ['png', 'PNG'],
+        ['jpeg', 'JPEG'],
+        ['webp', 'WebP'],
+      ]);
 
       const buttons = document.createElement('div');
       buttons.className = 'variant-actions';
