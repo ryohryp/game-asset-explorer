@@ -97,6 +97,41 @@
           "default": [],
           "scope": "resource",
           "description": "Workspace-relative directories to scan recursively for image assets."
+        },
+        "gameAssetExplorer.assetProfile": {
+          "type": "string",
+          "enum": [
+            "generic",
+            "rpg",
+            "action",
+            "visual-novel",
+            "card-game",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "General-purpose image asset categories.",
+            "RPG categories such as Character, Enemy, Item, Equipment, Skill, Map, UI, and Effect.",
+            "Action-game categories such as Character, Enemy, Weapon, Projectile, Stage, UI, and Effect.",
+            "Visual-novel categories such as Character, Expression, Background, CG, UI, and Effect.",
+            "Card-game categories such as Card, Character, Frame, Icon, Effect, and Background.",
+            "Use the categories configured in gameAssetExplorer.customAssetTypes."
+          ],
+          "default": "generic",
+          "scope": "window",
+          "description": "Game genre / Asset Profile used for semantic asset-type classification and filtering."
+        },
+        "gameAssetExplorer.customAssetTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxItems": 32,
+          "uniqueItems": true,
+          "default": [],
+          "scope": "window",
+          "description": "Asset types available when the active Asset Profile is Custom."
         }
       }
     }
