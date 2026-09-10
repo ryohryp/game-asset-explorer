@@ -4,13 +4,14 @@ import { buildVariantGenerationPackage, getDefaultVariantOutputPath, getVariantO
 import { type WorkspaceAsset } from "../src/workspaceAsset";
 
 function asset(relativePath = "assets/enemies/slime.png", fileType: WorkspaceAsset["asset"]["fileType"] = "png"): WorkspaceAsset {
+  const fileName = relativePath.replaceAll("\\", "/").split("/").pop() ?? relativePath;
   return {
     workspaceFolderUri: "file:///game",
     workspaceFolderName: "game",
     asset: {
       absolutePath: `/game/${relativePath}`,
       relativePath,
-      fileName: relativePath.split("/").at(-1) ?? relativePath,
+      fileName,
       fileType,
     },
   };
@@ -65,4 +66,15 @@ test("rejects output extension and format mismatch before provider invocation", 
     outputFormat: "webp",
     outputPath: "assets/enemies/slime_damage.png",
   }), /extension must match/i);
+});
+
+test("rejects workspace-external anchors and output traversal", () => {
+  assert.throws(
+    () => getDefaultVariantOutputPath(asset("/tmp/external.png")),
+    /inside the selected workspace/i,
+  );
+  assert.throws(() => buildVariantGenerationPackage(asset(), {
+    preset: "pose-action",
+    outputPath: "../outside.png",
+  }), /output path must stay inside/i);
 });
