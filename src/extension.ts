@@ -7,6 +7,7 @@ import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
 import { DebouncedAction } from "./core/debouncedAction";
+import { VISUAL_CANON_PATH } from "./core/visualCanon";
 import {
   loadWorkspaceAssetTypes,
   updateWorkspaceAssetCharacter,
@@ -22,6 +23,11 @@ import {
 } from "./variantRuntime";
 import { VariantReviewController } from "./variantReviewController";
 import { VariantWorkflow } from "./variantWorkflow";
+import {
+  loadWorkspaceVisualCanonForAsset,
+  resolveUnambiguousWorkspaceVisualCanon,
+  type WorkspaceVisualCanonReader,
+} from "./visualCanonWorkspace";
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
@@ -53,6 +59,20 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.Uri.joinPath(workspaceUri, ASSET_TYPE_METADATA_PATH),
         new TextEncoder().encode(text),
       );
+    },
+  };
+
+  const visualCanonReader: WorkspaceVisualCanonReader = {
+    read: async (workspaceFolderUri) => {
+      const canonUri = vscode.Uri.joinPath(vscode.Uri.parse(workspaceFolderUri), VISUAL_CANON_PATH);
+      try {
+        return new TextDecoder().decode(await vscode.workspace.fs.readFile(canonUri));
+      } catch (error) {
+        if (isFileNotFound(error)) {
+          return undefined;
+        }
+        throw error;
+      }
     },
   };
 
@@ -184,6 +204,17 @@ export function activate(context: vscode.ExtensionContext): void {
         metadataWatcher.onDidChange(onMetadataEvent),
         metadataWatcher.onDidDelete(onMetadataEvent),
       );
+
+      const visualCanonWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceFolder, VISUAL_CANON_PATH),
+      );
+      const onVisualCanonEvent = (): void => watcherRefresh?.trigger();
+      watcherDisposables.push(
+        visualCanonWatcher,
+        visualCanonWatcher.onDidCreate(onVisualCanonEvent),
+        visualCanonWatcher.onDidChange(onVisualCanonEvent),
+        visualCanonWatcher.onDidDelete(onVisualCanonEvent),
+      );
     }
   };
 
@@ -233,10 +264,20 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         const details = await loadAssetDetails(workspaceAsset.asset);
-        return {
-          ...details,
-          workspaceAsset,
-        };
+        try {
+          const visualCanon = await loadWorkspaceVisualCanonForAsset(workspaceAsset, visualCanonReader);
+          return {
+            ...details,
+            workspaceAsset,
+            visualCanon: { memberships: visualCanon.memberships },
+          };
+        } catch (error) {
+          return {
+            ...details,
+            workspaceAsset,
+            visualCanon: { memberships: [], error: formatError(error) },
+          };
+        }
       },
       onSetAssetType: async (identity, assetType) => {
         const workspaceAsset = findAsset(identity);
@@ -290,7 +331,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
         activeVariantAsset = workspaceAsset;
         try {
-          return await variantWorkflow.start(workspaceAsset, input);
+          const visualCanonState = await loadWorkspaceVisualCanonForAsset(workspaceAsset, visualCanonReader);
+          const visualCanon = resolveUnambiguousWorkspaceVisualCanon(
+            workspaceAsset,
+            visualCanonState,
+            discoveredAssets,
+          );
+          return await variantWorkflow.start(workspaceAsset, { ...input, visualCanon });
         } catch (error) {
           if (!reviewController.hasActiveReview) {
             activeVariantAsset = undefined;
