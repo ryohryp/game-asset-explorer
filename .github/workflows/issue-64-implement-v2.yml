@@ -1,0 +1,48 @@
+name: Issue 64 implementation v2
+on:
+  push:
+    branches: [feat/64-visual-canon-wiring]
+permissions:
+  contents: write
+jobs:
+  implement:
+    if: ${{ !contains(github.event.head_commit.message, '[issue-64-done]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/64-visual-canon-wiring
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Reapply implementation patch
+        shell: bash
+        run: |
+          git show 2763626d36956e0725bc760e035728f9e41d8cb0:.github/workflows/issue-64-implement.yml > /tmp/old.yml
+          python3 <<'PY'
+          from pathlib import Path
+          text = Path('/tmp/old.yml').read_text()
+          start = text.index("          python3 <<'PY'\n") + len("          python3 <<'PY'\n")
+          end = text.index("          PY\n", start)
+          script = text[start:end]
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in script.splitlines()) + '\n'
+          Path('/tmp/apply.py').write_text(script)
+          PY
+          python3 /tmp/apply.py
+      - name: Run focused and full tests
+        run: |
+          npm run compile
+          node --test dist/test/visualCanon*.test.js dist/test/variantRequest.test.js
+          npm test
+      - name: Commit implementation
+        shell: bash
+        run: |
+          rm .github/workflows/issue-64-implement-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/extension.ts src/ui/assetGridPanel.ts docs/architecture.md .github/workflows/issue-64-implement-v2.yml
+          git commit -m "Wire Visual Canon into Asset Details and generation [issue-64-done]"
+          git push origin HEAD:feat/64-visual-canon-wiring
