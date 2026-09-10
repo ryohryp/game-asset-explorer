@@ -95,5 +95,6 @@ test("fails closed for unknown candidate without ending the active review", asyn
 test("does not replace an already active review", async () => {
   const controller = new VariantReviewController(async () => {});
   controller.begin(await session());
-  assert.throws(() => controller.begin(await session()), /already active/);
+  const secondSession = await session();
+  assert.throws(() => controller.begin(secondSession), /already active/);
 });
