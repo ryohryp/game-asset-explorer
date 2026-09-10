@@ -18,6 +18,12 @@ export interface VariantCandidateSummary {
   height?: number;
 }
 
+export interface VariantCandidatePreview {
+  id: string;
+  mediaType: string;
+  bytes: Uint8Array;
+}
+
 export interface VariantAssetWriter {
   write(relativePath: string, bytes: Uint8Array): Promise<void>;
 }
@@ -55,6 +61,20 @@ export class VariantReviewSession {
 
   get status(): VariantReviewStatus {
     return this.statusValue;
+  }
+
+  getCandidatePreview(candidateId: string): VariantCandidatePreview {
+    this.assertReviewing();
+    const candidate = this.generatedCandidates.find((item) => item.id === candidateId);
+    if (!candidate) {
+      throw new Error(`Unknown generation candidate: ${candidateId}`);
+    }
+
+    return {
+      id: candidate.id,
+      mediaType: candidate.mediaType,
+      bytes: candidate.bytes.slice(),
+    };
   }
 
   reject(): void {
