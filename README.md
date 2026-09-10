@@ -112,6 +112,10 @@ Prefer concrete current problems over speculative future architecture.
 
 MVP implementation in progress. Asset-directory scanning, thumbnail browsing, workspace-aware asset identity, in-memory search, and optional genre-aware semantic asset types are implemented.
 
+## Character suggestions
+
+For unassigned assets, Asset Details can suggest a character from existing character names found in the path or from conservative character-oriented folder/file conventions. Suggestions are derived only: they are not written to project metadata until you choose **Use Suggestion**. Explicit character assignments always win.
+
 ## Character view
 
 Assets can optionally be assigned to a character in Asset Details. Switch the Asset Grid **View** control to **Characters** to group standing art, expressions, portraits, icons, battle sprites, and other cross-type images by character without changing the project folder structure.
