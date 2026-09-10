@@ -24,6 +24,7 @@ Core owns:
 - reusable usage-matching logic that can operate on supplied text/search results
 - reusable direct-reference extraction and Asset Health classification
 - Generation Package construction/validation and the vendor-neutral image-provider contract
+- transient variant-review lifecycle and explicit approval rules
 
 Core does not own:
 
@@ -194,7 +195,15 @@ Before a provider is invoked, core validation must fail closed when:
 
 The provider boundary is intentionally small and vendor-neutral. Provider credentials, account configuration, and vendor-specific request options belong outside `GenerationPackage`; no credentials are included in generation receipts or repository metadata.
 
-A provider invocation may return transient binary candidates plus a normalized receipt containing the validated package, provider/model identifiers, and non-secret candidate metadata. This foundation does not itself write candidates to the project, approve a candidate, persist generation history, or introduce a database/manifest.
+A provider invocation may return transient binary candidates plus a normalized receipt containing the validated package, provider/model identifiers, and non-secret candidate metadata.
+
+### Variant review lifecycle
+
+The provider-neutral variant workflow keeps generated candidate bytes transient until a user explicitly approves one. A review session requires a `variant` Generation Package with a required `source` reference as its Approved Anchor and accepts a bounded set of 2–4 candidates.
+
+Approval is create-only at this stage. Core re-checks the filesystem-derived current asset paths immediately before writing and refuses to overwrite a target that appeared after generation. Rejection/cancel writes nothing, and a completed session cannot approve again. The actual writer is injected so core remains independent of VS Code and filesystem APIs.
+
+This lifecycle does not define the Webview review UI, concrete provider credentials/configuration, persisted lineage, or replace/edit transactions.
 
 ## File change tracking
 
@@ -227,7 +236,7 @@ The architecture intentionally does not define these yet:
 - duplicate detection
 - engine-specific reference parsers
 - persisted AI generation metadata
-- variant lifecycle and candidate approval/adoption UI
+- variant review Webview and provider wiring
 - concrete image-provider adapters and credential configuration
 
 These should be designed only when an implemented workflow requires them.
