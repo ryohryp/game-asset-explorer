@@ -78,8 +78,10 @@ export async function approveVariantIntoWorkspace(
           throw new Error("Generation output already exists; refusing to overwrite it.");
         }
 
-        const parent = vscode.Uri.joinPath(target, "..");
-        await vscode.workspace.fs.createDirectory(parent);
+        const parentPath = path.posix.dirname(normalized);
+        if (parentPath !== ".") {
+          await vscode.workspace.fs.createDirectory(toWorkspaceUri(workspaceFolder, parentPath));
+        }
         if (await uriExists(target)) {
           throw new Error("Generation output appeared during approval; refusing to overwrite it.");
         }
