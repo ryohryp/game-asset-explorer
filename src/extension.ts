@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
 import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
@@ -245,9 +246,60 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.update(assets);
   });
 
+  const configureAssetDirectoriesCommand = vscode.commands.registerCommand(
+    "gameAssetExplorer.configureAssetDirectories",
+    async () => {
+      const configured = await configureAssetDirectories();
+      const availability = await updateAssetDirectoryContext();
+      if (configured && availability.hasUsableAssetDirectories) {
+        await vscode.commands.executeCommand("gameAssetExplorer.openAssetGrid");
+      }
+    },
+  );
+
+  const emptyTreeDataProvider: vscode.TreeDataProvider<vscode.TreeItem> = {
+    getTreeItem: (element) => element,
+    getChildren: () => [],
+  };
+  const assetExplorerView = vscode.window.createTreeView("gameAssetExplorer.explorer", {
+    treeDataProvider: emptyTreeDataProvider,
+  });
+  let openingGridFromActivityBar = false;
+
+  const openGridFromActivityBarIfReady = async (): Promise<void> => {
+    if (openingGridFromActivityBar) {
+      return;
+    }
+
+    const availability = await updateAssetDirectoryContext();
+    if (!availability.hasUsableAssetDirectories) {
+      return;
+    }
+
+    openingGridFromActivityBar = true;
+    try {
+      await vscode.commands.executeCommand("gameAssetExplorer.openAssetGrid");
+    } finally {
+      openingGridFromActivityBar = false;
+    }
+  };
+
+  const activityViewVisibilityListener = assetExplorerView.onDidChangeVisibility((event) => {
+    if (!event.visible) {
+      return;
+    }
+
+    void openGridFromActivityBarIfReady().catch((error) => {
+      console.error("Game Asset Explorer: Unable to open the asset grid from the Activity Bar.", error);
+    });
+  });
+
   const workspaceFolderListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
     rebuildWatchers();
     watcherRefresh?.trigger();
+    void updateAssetDirectoryContext().catch((error) => {
+      console.error("Game Asset Explorer: Unable to refresh first-run workspace state.", error);
+    });
   });
 
   const configurationListener = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -257,12 +309,27 @@ export function activate(context: vscode.ExtensionContext): void {
 
     rebuildWatchers();
     watcherRefresh?.trigger();
+    void updateAssetDirectoryContext().catch((error) => {
+      console.error("Game Asset Explorer: Unable to refresh asset-directory state.", error);
+    });
+  });
+
+  void updateAssetDirectoryContext().then(() => {
+    if (assetExplorerView.visible) {
+      return openGridFromActivityBarIfReady();
+    }
+    return undefined;
+  }).catch((error) => {
+    console.error("Game Asset Explorer: Unable to initialize Activity Bar state.", error);
   });
 
   context.subscriptions.push(
     scanCommand,
     setOpenAiApiKeyCommand,
     openCommand,
+    configureAssetDirectoriesCommand,
+    assetExplorerView,
+    activityViewVisibilityListener,
     workspaceFolderListener,
     configurationListener,
     { dispose: disposeWatchers },
