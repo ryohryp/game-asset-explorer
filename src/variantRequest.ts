@@ -7,6 +7,7 @@ import {
   type GenerationImageFormat,
   type GenerationPackage,
 } from "./core/generationPackage";
+import { type ResolvedVisualCanonContext } from "./core/visualCanon";
 import { type WorkspaceAsset } from "./workspaceAsset";
 
 export type VariantIntentPreset = "pose-action" | "damage-state" | "environment" | "custom";
@@ -19,6 +20,7 @@ export interface VariantRequestInput {
   outputSize?: VariantOutputSize;
   outputFormat?: GenerationImageFormat;
   assetKind?: GenerationAssetKind;
+  visualCanon?: ResolvedVisualCanonContext;
 }
 
 const PRESET_REQUESTS: Record<Exclude<VariantIntentPreset, "custom">, string> = {
@@ -78,15 +80,16 @@ export function buildVariantGenerationPackage(
   }
 
   const size = OUTPUT_SIZES[input.outputSize ?? "1024x1024"];
+  const canonReferences = input.visualCanon?.references.filter((reference) => reference.relativePath !== sourcePath) ?? [];
   return createGenerationPackage({
-    assetKind: input.assetKind ?? "other",
+    assetKind: input.visualCanon?.entry.kind ?? input.assetKind ?? "other",
     intent: "variant",
     userRequest: getVariantPresetRequest(input.preset, input.customRequest),
     references: [{
       relativePath: sourcePath,
       role: "source",
       required: true,
-    }],
+    }, ...canonReferences],
     output: {
       relativePath: outputPath,
       width: size.width,
@@ -95,6 +98,7 @@ export function buildVariantGenerationPackage(
       alpha: "preserve",
       writeMode: "create",
     },
+    ...(input.visualCanon ? { context: input.visualCanon.context } : {}),
   });
 }
 
