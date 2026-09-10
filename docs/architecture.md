@@ -23,6 +23,7 @@ Core owns:
 - filesystem-derived asset metadata when needed
 - reusable usage-matching logic that can operate on supplied text/search results
 - reusable direct-reference extraction and Asset Health classification
+- Generation Package construction/validation and the vendor-neutral image-provider contract
 
 Core does not own:
 
@@ -33,6 +34,7 @@ Core does not own:
 - file watchers
 - editor navigation
 - workspace text-search execution
+- provider credentials or provider-specific account configuration
 
 ### VS Code integration (`src/extension.ts` and adapters)
 
@@ -169,6 +171,31 @@ Current semantics are deliberately conservative:
 
 Health analysis is isolated per workspace folder in multi-root workspaces. It does not create a database, cache, manifest, stable ID, persistent graph, or background index.
 
+## AI generation foundation
+
+Post-MVP AI generation starts with a VS Code-independent `GenerationPackage`; user-facing generation UI and concrete provider adapters come later.
+
+The package is plain serializable data and carries only cross-provider generation intent and constraints:
+
+- asset kind and generation intent
+- user request text
+- explicit workspace-relative source/reference asset paths
+- workspace-relative output target
+- width, height, image format, alpha requirement, and create/replace mode
+- optional subject/canon-style constraints that are meaningful across providers
+
+Before a provider is invoked, core validation must fail closed when:
+
+- an output or reference path is absolute, traverses outside the workspace, or otherwise is not a safe workspace-relative path
+- a required reference is not present in the current discovered asset set
+- output dimensions or format constraints are invalid
+- create mode would collide with an existing asset
+- replace mode is not paired with an explicit edit intent and an existing target
+
+The provider boundary is intentionally small and vendor-neutral. Provider credentials, account configuration, and vendor-specific request options belong outside `GenerationPackage`; no credentials are included in generation receipts or repository metadata.
+
+A provider invocation may return transient binary candidates plus a normalized receipt containing the validated package, provider/model identifiers, and non-secret candidate metadata. This foundation does not itself write candidates to the project, approve a candidate, persist generation history, or introduce a database/manifest.
+
 ## File change tracking
 
 The watcher is a VS Code concern.
@@ -199,7 +226,8 @@ The architecture intentionally does not define these yet:
 - safe rename/replace transactions
 - duplicate detection
 - engine-specific reference parsers
-- AI generation metadata
-- variant lifecycle
+- persisted AI generation metadata
+- variant lifecycle and candidate approval/adoption UI
+- concrete image-provider adapters and credential configuration
 
 These should be designed only when an implemented workflow requires them.
