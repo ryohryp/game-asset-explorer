@@ -3,8 +3,15 @@ import * as vscode from "vscode";
 import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
 import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
+import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
+import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
 import { DebouncedAction } from "./core/debouncedAction";
+import {
+  loadWorkspaceAssetTypes,
+  updateWorkspaceAssetType,
+  type WorkspaceAssetTypeStore,
+} from "./assetTypeWorkspace";
 import { AssetGridPanel } from "./ui/assetGridPanel";
 import { findWorkspaceAssetUsages, openAssetUsage } from "./usageSearch";
 import {
@@ -21,11 +28,36 @@ let disposeWatcherResources: (() => void) | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   let activePanel: AssetGridPanel | undefined;
+  let activeProfile = getConfiguredAssetProfile();
   let watcherDisposables: vscode.Disposable[] = [];
   let watcherRefresh: DebouncedAction | undefined;
 
+  const assetTypeStore: WorkspaceAssetTypeStore = {
+    read: async (workspaceFolderUri) => {
+      const metadataUri = vscode.Uri.joinPath(vscode.Uri.parse(workspaceFolderUri), ASSET_TYPE_METADATA_PATH);
+      try {
+        return new TextDecoder().decode(await vscode.workspace.fs.readFile(metadataUri));
+      } catch (error) {
+        if (isFileNotFound(error)) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
+    write: async (workspaceFolderUri, text) => {
+      const workspaceUri = vscode.Uri.parse(workspaceFolderUri);
+      const metadataDirectory = vscode.Uri.joinPath(workspaceUri, ".game-asset-explorer");
+      await vscode.workspace.fs.createDirectory(metadataDirectory);
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(workspaceUri, ASSET_TYPE_METADATA_PATH),
+        new TextEncoder().encode(text),
+      );
+    },
+  };
+
   const scanAndStore = async (showMessage: boolean): Promise<WorkspaceAsset[]> => {
     const workspaceFolders = vscode.workspace.workspaceFolders;
+    activeProfile = getConfiguredAssetProfile();
     if (!workspaceFolders || workspaceFolders.length === 0) {
       discoveredAssets = [];
       if (showMessage) {
@@ -46,11 +78,19 @@ export function activate(context: vscode.ExtensionContext): void {
         assetDirectories,
       });
 
-      nextAssets.push(...result.assets.map((asset) => ({
+      const workspaceAssets = result.assets.map((asset) => ({
         workspaceFolderUri: workspaceFolder.uri.toString(),
         workspaceFolderName: workspaceFolder.name,
         asset,
-      })));
+      }));
+      try {
+        nextAssets.push(...await loadWorkspaceAssetTypes(workspaceAssets, activeProfile, assetTypeStore));
+      } catch (error) {
+        nextAssets.push(...workspaceAssets);
+        warnings.push(
+          `${workspaceFolder.name}: Unable to load ${ASSET_TYPE_METADATA_PATH}: ${formatError(error)}. Assets remain available as Uncategorized.`,
+        );
+      }
       warnings.push(...result.warnings.map((warning) => `${workspaceFolder.name}: ${warning}`));
     }
 
@@ -77,7 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     try {
-      activePanel.update(assets);
+      activePanel.update(assets, activeProfile);
     } catch (error) {
       activePanel = undefined;
       console.warn("Game Asset Explorer: Unable to refresh closed asset grid.", error);
@@ -132,6 +172,17 @@ export function activate(context: vscode.ExtensionContext): void {
           watcher.onDidDelete(onAssetEvent),
         );
       }
+
+      const metadataWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceFolder, ASSET_TYPE_METADATA_PATH),
+      );
+      const onMetadataEvent = (): void => watcherRefresh?.trigger();
+      watcherDisposables.push(
+        metadataWatcher,
+        metadataWatcher.onDidCreate(onMetadataEvent),
+        metadataWatcher.onDidChange(onMetadataEvent),
+        metadataWatcher.onDidDelete(onMetadataEvent),
+      );
     }
   };
 
@@ -152,6 +203,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const openCommand = vscode.commands.registerCommand("gameAssetExplorer.openAssetGrid", async () => {
     let activeVariantAsset: WorkspaceAsset | undefined;
+    activeProfile = getConfiguredAssetProfile();
     const reviewController = new VariantReviewController(async (session, candidateId) => {
       if (!activeVariantAsset) {
         throw new Error("Generate Variant lost its selected Approved Anchor.");
@@ -170,6 +222,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const panel = AssetGridPanel.show({
       extensionUri: context.extensionUri,
+      assetProfile: activeProfile,
       onRefresh: () => scanAndStore(false),
       onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
       onSelect: async (identity) => {
@@ -183,6 +236,16 @@ export function activate(context: vscode.ExtensionContext): void {
           ...details,
           workspaceAsset,
         };
+      },
+      onSetAssetType: async (identity, assetType) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          throw new Error("Selected asset is no longer available. Refresh and try again.");
+        }
+
+        activeProfile = getConfiguredAssetProfile();
+        await updateWorkspaceAssetType(workspaceAsset, assetType, activeProfile, assetTypeStore);
+        return scanAndStore(false);
       },
       onCopyPath: async (identity) => {
         const workspaceAsset = findAsset(identity);
@@ -243,7 +306,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     activePanel = panel;
     const assets = await scanAndStore(false);
-    panel.update(assets);
+    panel.update(assets, activeProfile);
   });
 
   const configureAssetDirectoriesCommand = vscode.commands.registerCommand(
@@ -296,21 +359,31 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const workspaceFolderListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
     rebuildWatchers();
-    watcherRefresh?.trigger();
+    void refreshFromFilesystem().catch((error) => {
+      console.error("Game Asset Explorer: Unable to refresh assets after workspace changes.", error);
+    });
     void updateAssetDirectoryContext().catch((error) => {
       console.error("Game Asset Explorer: Unable to refresh first-run workspace state.", error);
     });
   });
 
   const configurationListener = vscode.workspace.onDidChangeConfiguration((event) => {
-    if (!event.affectsConfiguration("gameAssetExplorer.assetDirectories")) {
+    const assetDirectoriesChanged = event.affectsConfiguration("gameAssetExplorer.assetDirectories");
+    const assetProfileChanged = event.affectsConfiguration("gameAssetExplorer.assetProfile")
+      || event.affectsConfiguration("gameAssetExplorer.customAssetTypes");
+    if (!assetDirectoriesChanged && !assetProfileChanged) {
       return;
     }
 
-    rebuildWatchers();
-    watcherRefresh?.trigger();
-    void updateAssetDirectoryContext().catch((error) => {
-      console.error("Game Asset Explorer: Unable to refresh asset-directory state.", error);
+    if (assetDirectoriesChanged) {
+      rebuildWatchers();
+      void updateAssetDirectoryContext().catch((error) => {
+        console.error("Game Asset Explorer: Unable to refresh asset-directory state.", error);
+      });
+    }
+
+    void refreshFromFilesystem().catch((error) => {
+      console.error("Game Asset Explorer: Unable to refresh profile-aware asset state.", error);
     });
   });
 
@@ -340,4 +413,23 @@ export function deactivate(): void {
   disposeWatcherResources?.();
   disposeWatcherResources = undefined;
   discoveredAssets = [];
+}
+
+function getConfiguredAssetProfile(): AssetProfile {
+  const configuration = vscode.workspace.getConfiguration("gameAssetExplorer");
+  return resolveAssetProfile(
+    configuration.get<string>("assetProfile", "generic"),
+    configuration.get<string[]>("customAssetTypes", []),
+  );
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "FileNotFound";
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

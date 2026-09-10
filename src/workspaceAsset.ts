@@ -5,6 +5,7 @@ export interface WorkspaceAsset {
   workspaceFolderUri: string;
   workspaceFolderName: string;
   asset: AssetRecord;
+  assetType?: string;
 }
 
 export function getWorkspaceAssetIdentity(workspaceAsset: WorkspaceAsset): string {
