@@ -6,7 +6,13 @@ import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { DebouncedAction } from "./core/debouncedAction";
 import { AssetGridPanel } from "./ui/assetGridPanel";
 import { findWorkspaceAssetUsages, openAssetUsage } from "./usageSearch";
-import { storeOpenAiApiKey } from "./variantRuntime";
+import {
+  approveVariantIntoWorkspace,
+  startOpenAiVariantReview,
+  storeOpenAiApiKey,
+} from "./variantRuntime";
+import { VariantReviewController } from "./variantReviewController";
+import { VariantWorkflow } from "./variantWorkflow";
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
@@ -144,6 +150,23 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const openCommand = vscode.commands.registerCommand("gameAssetExplorer.openAssetGrid", async () => {
+    let activeVariantAsset: WorkspaceAsset | undefined;
+    const reviewController = new VariantReviewController(async (session, candidateId) => {
+      if (!activeVariantAsset) {
+        throw new Error("Generate Variant lost its selected Approved Anchor.");
+      }
+      await approveVariantIntoWorkspace(session, candidateId, activeVariantAsset, discoveredAssets);
+    });
+    const variantWorkflow = new VariantWorkflow(
+      reviewController,
+      (selectedAsset, generationPackage) => startOpenAiVariantReview(
+        context,
+        selectedAsset,
+        discoveredAssets,
+        generationPackage,
+      ),
+    );
+
     const panel = AssetGridPanel.show({
       extensionUri: context.extensionUri,
       onRefresh: () => scanAndStore(false),
@@ -184,6 +207,35 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         return inspectWorkspaceAssetHealth(workspaceAsset, discoveredAssets);
+      },
+      onStartVariant: async (identity, input) => {
+        const workspaceAsset = findAsset(identity);
+        if (!workspaceAsset) {
+          throw new Error("Selected asset is no longer available. Refresh and try again.");
+        }
+
+        activeVariantAsset = workspaceAsset;
+        try {
+          return await variantWorkflow.start(workspaceAsset, input);
+        } catch (error) {
+          if (!reviewController.hasActiveReview) {
+            activeVariantAsset = undefined;
+          }
+          throw error;
+        }
+      },
+      onApproveVariant: async (candidateId) => {
+        await reviewController.approve(candidateId);
+        activeVariantAsset = undefined;
+        const assets = await scanAndStore(false);
+        await vscode.window.showInformationMessage("Game Asset Explorer: Generated variant approved and added to the workspace.");
+        return assets;
+      },
+      onRejectVariant: async () => {
+        if (reviewController.hasActiveReview) {
+          reviewController.reject();
+        }
+        activeVariantAsset = undefined;
       },
       onOpenUsage: openAssetUsage,
     });
