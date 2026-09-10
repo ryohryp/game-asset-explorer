@@ -6,6 +6,7 @@ import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { DebouncedAction } from "./core/debouncedAction";
 import { AssetGridPanel } from "./ui/assetGridPanel";
 import { findWorkspaceAssetUsages, openAssetUsage } from "./usageSearch";
+import { storeOpenAiApiKey } from "./variantRuntime";
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
@@ -138,6 +139,10 @@ export function activate(context: vscode.ExtensionContext): void {
     await scanAndStore(true);
   });
 
+  const setOpenAiApiKeyCommand = vscode.commands.registerCommand("gameAssetExplorer.setOpenAiApiKey", async () => {
+    await storeOpenAiApiKey(context);
+  });
+
   const openCommand = vscode.commands.registerCommand("gameAssetExplorer.openAssetGrid", async () => {
     const panel = AssetGridPanel.show({
       extensionUri: context.extensionUri,
@@ -204,6 +209,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     scanCommand,
+    setOpenAiApiKeyCommand,
     openCommand,
     workspaceFolderListener,
     configurationListener,
