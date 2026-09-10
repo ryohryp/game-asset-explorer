@@ -9,6 +9,7 @@ import {
 import { type AssetHealthReport, type MissingAssetReference } from "../assetHealthSearch";
 import { AssetDetails } from "../core/assetDetails";
 import { listCharacterNames, UNASSIGNED_CHARACTER_LABEL } from "../core/assetCharacterGrouping";
+import { suggestCharacterAssignment } from "../core/assetCharacterSuggestion";
 import {
   UNCATEGORIZED_ASSET_TYPE_LABEL,
   type AssetProfile,
@@ -433,7 +434,16 @@ function getWebviewHtml(
     ? `<div class="empty"><strong>No image assets found.</strong><span>Configure <code>gameAssetExplorer.assetDirectories</code> and refresh.</span></div>`
     : `<div class="content"><div id="asset-grid" class="grid">${cards}</div><aside id="details" class="details" hidden></aside></div>`;
   const serializedProfile = serializeForScript({ label: assetProfile.label, assetTypes: assetProfile.assetTypes });
-  const serializedCharacters = serializeForScript(listCharacterNames(assets));
+  const characterNames = listCharacterNames(assets);
+  const serializedCharacters = serializeForScript(characterNames);
+  const serializedCharacterSuggestions = serializeForScript(Object.fromEntries(
+    assets
+      .map((asset) => [
+        getWorkspaceAssetIdentity(asset),
+        suggestCharacterAssignment(asset.asset.relativePath, characterNames, asset.character),
+      ] as const)
+      .filter((entry): entry is readonly [string, string] => typeof entry[1] === "string"),
+  ));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -538,6 +548,7 @@ function getWebviewHtml(
     const vscode = acquireVsCodeApi();
     const assetProfile = ${serializedProfile};
     const characterNames = ${serializedCharacters};
+    const characterSuggestions = ${serializedCharacterSuggestions};
     const search = document.getElementById('search');
     const summary = document.getElementById('summary');
     const details = document.getElementById('details');
@@ -805,7 +816,7 @@ function getWebviewHtml(
       addDetailRow('Path', asset.relativePath);
       addDetailRow('Workspace', result.workspaceAsset.workspaceFolderName);
       addAssetTypeControl(result.workspaceAsset.assetType);
-      addCharacterControl(result.workspaceAsset.character);
+      addCharacterControl(result.workspaceAsset.character, selectedIdentity ? characterSuggestions[selectedIdentity] : undefined);
       addDetailRow('Format', asset.fileType.toUpperCase());
       addDetailRow('Size', formatBytes(result.details.sizeBytes));
       addDetailRow('Modified', new Date(result.details.modifiedAt).toLocaleString());
@@ -886,7 +897,7 @@ function getWebviewHtml(
       details.appendChild(row);
     }
 
-    function addCharacterControl(currentCharacter) {
+    function addCharacterControl(currentCharacter, suggestedCharacter) {
       const row = document.createElement('div');
       row.className = 'detail-row';
       const label = document.createElement('label');
@@ -938,6 +949,17 @@ function getWebviewHtml(
       clear.id = 'character-clear';
       actions.append(save, clear);
 
+      const suggestion = document.createElement('div');
+      if (typeof suggestedCharacter === 'string' && suggestedCharacter) {
+        suggestion.className = 'status';
+        suggestion.textContent = 'Suggested character: ' + suggestedCharacter;
+        const accept = actionButton('Use Suggestion', true, () => {
+          input.value = suggestedCharacter;
+          saveCharacter(suggestedCharacter);
+        });
+        actions.prepend(accept);
+      }
+
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -946,7 +968,7 @@ function getWebviewHtml(
       });
 
       const status = statusNode('character-status');
-      row.append(label, input, dataList, actions, status);
+      row.append(label, input, dataList, suggestion, actions, status);
       details.appendChild(row);
     }
 
