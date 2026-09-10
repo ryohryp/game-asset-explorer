@@ -1,5 +1,13 @@
 import * as vscode from "vscode";
+import {
+  buildAssetFacetOptions,
+  filterWorkspaceAssetsByFacets,
+  reconcileAssetFacetSelection,
+  type AssetFacetOption,
+  type AssetFacetSelection,
+} from "../assetFacets";
 import { AssetDetails } from "../core/assetDetails";
+import { type AssetFileType } from "../core/assetScanner";
 import { createExplorationState, reconcileExplorationState, type ExplorationState } from "../explorationState";
 import { AssetUsage } from "../usageSearch";
 import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
@@ -31,6 +39,7 @@ export class AssetGridPanel {
   private assets: WorkspaceAsset[] = [];
   private usageResults: AssetUsage[] = [];
   private viewState: ExplorationState = createExplorationState();
+  private facets: AssetFacetSelection = {};
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
     if (AssetGridPanel.currentPanel) {
@@ -94,15 +103,10 @@ export class AssetGridPanel {
         return;
       }
 
-      if (isSearchMessage(message)) {
+      if (isFilterMessage(message)) {
         this.viewState = { ...this.viewState, query: message.query };
-        const matches = this.onSearch(message.query);
-        await this.panel.webview.postMessage({
-          type: "searchResults",
-          identities: matches.map(getWorkspaceAssetIdentity),
-          count: matches.length,
-          total: this.assets.length,
-        });
+        this.facets = reconcileAssetFacetSelection(message.facets, this.assets);
+        await this.postFilterResults(message.query);
         return;
       }
 
@@ -149,6 +153,7 @@ export class AssetGridPanel {
 
   update(assets: readonly WorkspaceAsset[]): void {
     this.assets = [...assets];
+    this.facets = reconcileAssetFacetSelection(this.facets, this.assets);
     const state = reconcileExplorationState(this.viewState, this.assets);
     this.viewState = {
       query: state.query,
@@ -161,6 +166,18 @@ export class AssetGridPanel {
     this.panel.webview.html = getWebviewHtml(this.panel.webview, this.assets);
   }
 
+  private async postFilterResults(query: string): Promise<void> {
+    const searchMatches = this.onSearch(query);
+    const matches = filterWorkspaceAssetsByFacets(searchMatches, "", this.facets);
+    await this.panel.webview.postMessage({
+      type: "filterResults",
+      identities: matches.map(getWorkspaceAssetIdentity),
+      count: matches.length,
+      total: this.assets.length,
+      facets: this.facets,
+    });
+  }
+
   private async restoreViewState(): Promise<void> {
     const state = reconcileExplorationState(this.viewState, this.assets);
     this.viewState = {
@@ -168,11 +185,13 @@ export class AssetGridPanel {
       selectedIdentity: state.selectedIdentity,
       scrollY: state.scrollY,
     };
+    this.facets = reconcileAssetFacetSelection(this.facets, this.assets);
     if (state.selectionStatus === "missing") {
       this.usageResults = [];
     }
 
-    const matches = this.onSearch(state.query);
+    const searchMatches = this.onSearch(state.query);
+    const matches = filterWorkspaceAssetsByFacets(searchMatches, "", this.facets);
     await this.panel.webview.postMessage({
       type: "restoreState",
       query: state.query,
@@ -181,6 +200,7 @@ export class AssetGridPanel {
       identities: matches.map(getWorkspaceAssetIdentity),
       count: matches.length,
       total: this.assets.length,
+      facets: this.facets,
     });
 
     if (!state.selectedIdentity) {
@@ -205,6 +225,10 @@ export class AssetGridPanel {
 function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset[]): string {
   const nonce = createNonce();
   const cards = assets.map((asset) => renderAssetCard(webview, asset)).join("\n");
+  const facetOptions = buildAssetFacetOptions(assets);
+  const workspaceFacet = facetOptions.workspaces.length > 1
+    ? renderFacetSelect("workspace-filter", "Workspace", facetOptions.workspaces)
+    : "";
   const body = assets.length === 0
     ? `<div class="empty"><strong>No image assets found.</strong><span>Configure <code>gameAssetExplorer.assetDirectories</code> and refresh.</span></div>`
     : `<div class="content"><div class="grid">${cards}</div><aside id="details" class="details" hidden></aside></div>`;
@@ -218,14 +242,20 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
   <title>Game Asset Explorer</title>
   <style>
     body { margin: 0; padding: 16px; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); }
-    .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
     .search { flex: 1; min-width: 120px; max-width: 520px; border: 1px solid var(--vscode-input-border, transparent); color: var(--vscode-input-foreground); background: var(--vscode-input-background); padding: 6px 8px; outline: none; }
-    .search:focus { border-color: var(--vscode-focusBorder); }
+    .search:focus, .facet-select:focus { border-color: var(--vscode-focusBorder); }
     .summary { margin-left: auto; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+    .facets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .facet-label { display: flex; align-items: center; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
+    .facet-select { max-width: 230px; min-width: 105px; border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, transparent)); color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-input-background)); padding: 4px 24px 4px 6px; outline: none; }
+    .filter-status { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
     button { border: 1px solid var(--vscode-button-border, transparent); color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 6px 12px; border-radius: 2px; cursor: pointer; }
     button:hover { background: var(--vscode-button-hoverBackground); }
     button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
     button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+    button.compact { padding: 4px 8px; font-size: 0.82em; }
+    button:disabled { opacity: 0.55; cursor: default; }
     .content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 18px; align-items: start; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 14px; align-items: start; }
     .card { min-width: 0; border: 1px solid var(--vscode-widget-border); background: var(--vscode-sideBar-background); border-radius: 6px; overflow: hidden; cursor: pointer; transition: background-color 80ms ease, border-color 80ms ease, box-shadow 80ms ease; }
@@ -257,7 +287,7 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
     @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 14px; } .grid { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
-    @media (max-width: 440px) { body { padding: 12px; } .toolbar { flex-wrap: wrap; gap: 8px; } .search { order: 1; flex-basis: 100%; max-width: none; } .summary { margin-left: 0; } .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 440px) { body { padding: 12px; } .toolbar { flex-wrap: wrap; gap: 8px; } .search { order: 1; flex-basis: 100%; max-width: none; } .summary { margin-left: 0; } .facet-label { flex: 1 1 100%; } .facet-select { flex: 1; max-width: none; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -266,17 +296,36 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
     <div id="summary" class="summary">${assets.length} image asset${assets.length === 1 ? "" : "s"}</div>
     <button id="refresh" type="button">Refresh</button>
   </div>
+  <div class="facets" aria-label="Asset filters">
+    ${renderFacetSelect("folder-filter", "Folder", facetOptions.folders)}
+    ${renderFacetSelect("type-filter", "Type", facetOptions.fileTypes)}
+    ${workspaceFacet}
+    <button id="clear-filters" class="secondary compact" type="button">Clear filters</button>
+    <span id="filter-status" class="filter-status">No facet filters</span>
+  </div>
   ${body}
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const search = document.getElementById('search');
     const summary = document.getElementById('summary');
     const details = document.getElementById('details');
+    const folderFilter = document.getElementById('folder-filter');
+    const typeFilter = document.getElementById('type-filter');
+    const workspaceFilter = document.getElementById('workspace-filter');
+    const clearFilters = document.getElementById('clear-filters');
+    const filterStatus = document.getElementById('filter-status');
     let selectedIdentity = null;
     let scrollFramePending = false;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-    search.addEventListener('input', () => vscode.postMessage({ type: 'search', query: search.value }));
+    search.addEventListener('input', sendFilter);
+    [folderFilter, typeFilter, workspaceFilter].filter(Boolean).forEach((control) => control.addEventListener('change', sendFilter));
+    clearFilters.addEventListener('click', () => {
+      if (folderFilter) folderFilter.value = '';
+      if (typeFilter) typeFilter.value = '';
+      if (workspaceFilter) workspaceFilter.value = '';
+      sendFilter();
+    });
     window.addEventListener('scroll', () => {
       if (scrollFramePending) return;
       scrollFramePending = true;
@@ -308,7 +357,8 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       if (message.type === 'restoreState') {
         search.value = typeof message.query === 'string' ? message.query : '';
         selectedIdentity = typeof message.selectedIdentity === 'string' ? message.selectedIdentity : null;
-        applySearchResults(message.identities || [], message.count || 0, message.total || 0);
+        applyFacetState(message.facets || {});
+        applyFilterResults(message.identities || [], message.count || 0, message.total || 0);
         let selectedCard = null;
         document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
           if (card.dataset.assetKey === selectedIdentity) selectedCard = card;
@@ -319,8 +369,9 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
         return;
       }
 
-      if (message.type === 'searchResults') {
-        applySearchResults(message.identities || [], message.count || 0, message.total || 0);
+      if (message.type === 'filterResults') {
+        applyFacetState(message.facets || {});
+        applyFilterResults(message.identities || [], message.count || 0, message.total || 0);
         return;
       }
 
@@ -340,7 +391,34 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       }
     });
 
-    function applySearchResults(identities, count, total) {
+    function currentFacets() {
+      return {
+        folder: folderFilter && folderFilter.value ? folderFilter.value : undefined,
+        fileType: typeFilter && typeFilter.value ? typeFilter.value : undefined,
+        workspaceFolderUri: workspaceFilter && workspaceFilter.value ? workspaceFilter.value : undefined,
+      };
+    }
+
+    function sendFilter() {
+      vscode.postMessage({ type: 'filter', query: search.value, facets: currentFacets() });
+      updateFilterStatus();
+    }
+
+    function applyFacetState(facets) {
+      if (folderFilter) folderFilter.value = facets.folder || '';
+      if (typeFilter) typeFilter.value = facets.fileType || '';
+      if (workspaceFilter) workspaceFilter.value = facets.workspaceFolderUri || '';
+      updateFilterStatus();
+    }
+
+    function updateFilterStatus() {
+      const facets = currentFacets();
+      const count = [facets.folder, facets.fileType, facets.workspaceFolderUri].filter(Boolean).length;
+      filterStatus.textContent = count === 0 ? 'No facet filters' : count + ' active filter' + (count === 1 ? '' : 's');
+      clearFilters.disabled = count === 0;
+    }
+
+    function applyFilterResults(identities, count, total) {
       const visibleIdentities = new Set(identities);
       document.querySelectorAll('.card[data-asset-key]').forEach((card) => {
         card.hidden = !visibleIdentities.has(card.dataset.assetKey);
@@ -494,10 +572,18 @@ function getWebviewHtml(webview: vscode.Webview, assets: readonly WorkspaceAsset
       });
     });
 
+    updateFilterStatus();
     vscode.postMessage({ type: 'ready' });
   </script>
 </body>
 </html>`;
+}
+
+function renderFacetSelect(id: string, label: string, options: readonly AssetFacetOption[]): string {
+  const renderedOptions = options
+    .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)} (${option.count})</option>`)
+    .join("");
+  return `<label class="facet-label">${escapeHtml(label)}<select id="${escapeHtml(id)}" class="facet-select" aria-label="Filter by ${escapeHtml(label.toLowerCase())}"><option value="">All</option>${renderedOptions}</select></label>`;
 }
 
 function renderAssetCard(webview: vscode.Webview, workspaceAsset: WorkspaceAsset): string {
@@ -544,13 +630,32 @@ function isRefreshMessage(message: unknown): message is { type: "refresh" } {
   return typeof message === "object" && message !== null && "type" in message && message.type === "refresh";
 }
 
-function isSearchMessage(message: unknown): message is { type: "search"; query: string } {
-  return typeof message === "object"
-    && message !== null
-    && "type" in message
-    && message.type === "search"
-    && "query" in message
-    && typeof message.query === "string";
+function isFilterMessage(message: unknown): message is { type: "filter"; query: string; facets: AssetFacetSelection } {
+  if (typeof message !== "object" || message === null || !("type" in message) || message.type !== "filter") {
+    return false;
+  }
+  if (!("query" in message) || typeof message.query !== "string" || !("facets" in message)) {
+    return false;
+  }
+  return isAssetFacetSelection(message.facets);
+}
+
+function isAssetFacetSelection(value: unknown): value is AssetFacetSelection {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const facet = value as { folder?: unknown; fileType?: unknown; workspaceFolderUri?: unknown };
+  return isOptionalString(facet.folder)
+    && (facet.fileType === undefined || isAssetFileType(facet.fileType))
+    && isOptionalString(facet.workspaceFolderUri);
+}
+
+function isAssetFileType(value: unknown): value is AssetFileType {
+  return value === "png" || value === "jpg" || value === "jpeg" || value === "webp" || value === "gif";
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
 }
 
 function isScrollMessage(message: unknown): message is { type: "scroll"; scrollY: number } {
