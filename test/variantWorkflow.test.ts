@@ -48,9 +48,14 @@ test("builder validation fails before starting a provider session", async () => 
 });
 
 test("starter failure does not leave a phantom active review", async () => {
-  const subject = workflow(async () => { throw new Error("provider unavailable"); });
+  let attempts = 0;
+  const subject = workflow(async (_asset, generationPackage) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("provider unavailable");
+    return startVariantReviewSession(provider, generationPackage, { availableAssetPaths: ["assets/hero.png"] });
+  });
   await assert.rejects(subject.start(asset, { preset: "pose-action" }), /provider unavailable/);
-  const review = await workflow().start(asset, { preset: "pose-action" });
+  const review = await subject.start(asset, { preset: "pose-action" });
   assert.equal(review.candidates.length, 2);
 });
 
