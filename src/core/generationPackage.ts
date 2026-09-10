@@ -64,6 +64,7 @@ export class GenerationPackageValidationError extends Error {
 }
 
 export function createGenerationPackage(input: GenerationPackageInput): GenerationPackage {
+  const context = normalizeContext(input.context);
   return {
     schemaVersion: 1,
     assetKind: input.assetKind,
@@ -78,7 +79,7 @@ export function createGenerationPackage(input: GenerationPackageInput): Generati
       ...input.output,
       relativePath: normalizeWorkspacePath(input.output.relativePath),
     },
-    context: normalizeContext(input.context),
+    ...(context ? { context } : {}),
   };
 }
 
