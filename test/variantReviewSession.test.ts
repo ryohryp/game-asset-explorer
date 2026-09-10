@@ -59,6 +59,35 @@ test("starts a bounded review session from an Approved Anchor", async () => {
   assert.deepEqual(session.candidates.map((candidate) => candidate.id), ["candidate-1", "candidate-2", "candidate-3"]);
 });
 
+test("exposes a copied transient preview while reviewing", async () => {
+  const session = await startVariantReviewSession(providerWith(2), packageForVariant(), { availableAssetPaths: available });
+  const preview = session.getCandidatePreview("candidate-1");
+  assert.equal(preview.id, "candidate-1");
+  assert.equal(preview.mediaType, "image/png");
+  assert.deepEqual(Array.from(preview.bytes), [1, 42]);
+
+  preview.bytes[0] = 99;
+  assert.deepEqual(Array.from(session.getCandidatePreview("candidate-1").bytes), [1, 42]);
+});
+
+test("preview access rejects an unknown candidate", async () => {
+  const session = await startVariantReviewSession(providerWith(2), packageForVariant(), { availableAssetPaths: available });
+  assert.throws(() => session.getCandidatePreview("missing"), /Unknown generation candidate/);
+});
+
+test("preview access is unavailable after rejection", async () => {
+  const session = await startVariantReviewSession(providerWith(2), packageForVariant(), { availableAssetPaths: available });
+  session.reject();
+  assert.throws(() => session.getCandidatePreview("candidate-1"), /already rejected/);
+});
+
+test("preview access is unavailable after approval", async () => {
+  const session = await startVariantReviewSession(providerWith(2), packageForVariant(), { availableAssetPaths: available });
+  const { writer } = recordingWriter();
+  await session.approve("candidate-1", { currentAssetPaths: available, writer });
+  assert.throws(() => session.getCandidatePreview("candidate-1"), /already approved/);
+});
+
 test("missing Approved Anchor fails before provider invocation", async () => {
   let called = false;
   await assert.rejects(
