@@ -16,6 +16,14 @@ const packageJson = JSON.parse(
     menus?: {
       "view/title"?: Array<{ command?: string; when?: string }>;
     };
+    configuration?: {
+      properties?: Record<string, {
+        default?: unknown;
+        scope?: string;
+        enum?: string[];
+        maxItems?: number;
+      }>;
+    };
   };
 };
 
@@ -59,4 +67,18 @@ test("provides actionable first-run and configured welcome states", () => {
   const titleCommands = packageJson.contributes?.menus?.["view/title"] ?? [];
   assert.ok(titleCommands.some((entry) => entry.command === "gameAssetExplorer.openAssetGrid"));
   assert.ok(titleCommands.some((entry) => entry.command === "gameAssetExplorer.configureAssetDirectories"));
+});
+
+test("contributes workspace Asset Profile and bounded Custom type settings", () => {
+  const properties = packageJson.contributes?.configuration?.properties ?? {};
+  const profile = properties["gameAssetExplorer.assetProfile"];
+  assert.ok(profile);
+  assert.equal(profile.default, "generic");
+  assert.equal(profile.scope, "window");
+  assert.deepEqual(profile.enum, ["generic", "rpg", "action", "visual-novel", "card-game", "custom"]);
+
+  const customTypes = properties["gameAssetExplorer.customAssetTypes"];
+  assert.ok(customTypes);
+  assert.equal(customTypes.scope, "window");
+  assert.equal(customTypes.maxItems, 32);
 });
