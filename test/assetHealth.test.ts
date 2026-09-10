@@ -36,11 +36,12 @@ test("extracts direct workspace image references and normalizes path variants", 
   );
 });
 
-test("ignores dynamic, external, parent-relative, filename-only, and non-image strings", () => {
+test("ignores dynamic, external, traversal, filename-only, and non-image strings", () => {
   const text = [
     "const dynamic = `assets/${name}.png`;",
     "const external = 'https://example.com/icon.png';",
     "const parent = '../assets/icon.png';",
+    "const traversal = 'assets/ui/../../secret/icon.png';",
     "const filenameOnly = 'icon.png';",
     "const source = 'assets/ui/icon.ts';",
   ].join("\n");
@@ -53,6 +54,7 @@ test("normalizes direct workspace paths conservatively", () => {
   assert.equal(normalizeWorkspaceImageReference("/assets/ui/icon.png"), "assets/ui/icon.png");
   assert.equal(normalizeWorkspaceImageReference("assets\\ui\\icon.png"), "assets/ui/icon.png");
   assert.equal(normalizeWorkspaceImageReference("../assets/ui/icon.png"), undefined);
+  assert.equal(normalizeWorkspaceImageReference("assets/ui/../icon.png"), undefined);
   assert.equal(normalizeWorkspaceImageReference("icon.png"), undefined);
 });
 
