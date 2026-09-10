@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import {
   createGenerationPackage,
+  isSafeWorkspaceRelativePath,
+  normalizeWorkspacePath,
   type GenerationAssetKind,
   type GenerationImageFormat,
   type GenerationPackage,
@@ -46,7 +48,10 @@ export function getDefaultVariantOutputPath(
   asset: WorkspaceAsset,
   format: GenerationImageFormat = defaultFormatForAsset(asset),
 ): string {
-  const relativePath = asset.asset.relativePath.replaceAll("\\", "/");
+  const relativePath = normalizeWorkspacePath(asset.asset.relativePath);
+  if (!isSafeWorkspaceRelativePath(relativePath)) {
+    throw new Error("Generate Variant requires an Approved Anchor inside the selected workspace.");
+  }
   const directory = path.posix.dirname(relativePath);
   const extension = format === "jpeg" ? "jpg" : format;
   const baseName = path.posix.basename(relativePath, path.posix.extname(relativePath));
@@ -58,20 +63,27 @@ export function buildVariantGenerationPackage(
   selectedAsset: WorkspaceAsset,
   input: VariantRequestInput,
 ): GenerationPackage {
-  const format = input.outputFormat ?? defaultFormatForAsset(selectedAsset);
-  const outputPath = input.outputPath?.trim() || getDefaultVariantOutputPath(selectedAsset, format);
-  const size = OUTPUT_SIZES[input.outputSize ?? "1024x1024"];
+  const sourcePath = normalizeWorkspacePath(selectedAsset.asset.relativePath);
+  if (!isSafeWorkspaceRelativePath(sourcePath)) {
+    throw new Error("Generate Variant requires an Approved Anchor inside the selected workspace.");
+  }
 
+  const format = input.outputFormat ?? defaultFormatForAsset(selectedAsset);
+  const outputPath = normalizeWorkspacePath(input.outputPath?.trim() || getDefaultVariantOutputPath(selectedAsset, format));
+  if (!isSafeWorkspaceRelativePath(outputPath)) {
+    throw new Error("Variant output path must stay inside the selected workspace.");
+  }
   if (!outputExtensionMatchesFormat(outputPath, format)) {
     throw new Error("Variant output filename extension must match the selected output format.");
   }
 
+  const size = OUTPUT_SIZES[input.outputSize ?? "1024x1024"];
   return createGenerationPackage({
     assetKind: input.assetKind ?? "other",
     intent: "variant",
     userRequest: getVariantPresetRequest(input.preset, input.customRequest),
     references: [{
-      relativePath: selectedAsset.asset.relativePath,
+      relativePath: sourcePath,
       role: "source",
       required: true,
     }],
