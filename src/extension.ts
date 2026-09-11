@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
 import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
+import { analyzeFolderOrganization } from "./core/folderOrganization";
 import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
@@ -257,6 +258,7 @@ export function activate(context: vscode.ExtensionContext): void {
       assetProfile: activeProfile,
       onRefresh: () => scanAndStore(false),
       onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
+      onAnalyzeOrganization: async () => analyzeFolderOrganization(discoveredAssets),
       onSelect: async (identity) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {

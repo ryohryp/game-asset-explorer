@@ -1,0 +1,256 @@
+import type { WorkspaceAsset } from "../workspaceAsset";
+
+export type FolderOrganizationFindingKind =
+  | "scattered-character"
+  | "mixed-asset-types"
+  | "deep-nesting"
+  | "one-off-folder"
+  | "uncategorized-concentration";
+
+export interface FolderOrganizationAssetRef {
+  workspaceFolderUri: string;
+  workspaceFolderName: string;
+  relativePath: string;
+  assetType?: string;
+  character?: string;
+}
+
+export interface FolderOrganizationFinding {
+  kind: FolderOrganizationFindingKind;
+  workspaceFolderUri: string;
+  workspaceFolderName: string;
+  title: string;
+  reason: string;
+  affectedFolders: string[];
+  affectedAssets: FolderOrganizationAssetRef[];
+  suggestedTargetFolder?: string;
+}
+
+export interface FolderOrganizationReport {
+  analyzedAssets: number;
+  findings: FolderOrganizationFinding[];
+  thresholds: {
+    mixedFolderMinimumAssets: number;
+    mixedFolderMinimumPerType: number;
+    deepFolderMinimumDepth: number;
+    oneOffFolderMinimumDepth: number;
+    uncategorizedMinimumAssets: number;
+    uncategorizedMinimumRatio: number;
+  };
+}
+
+export const FOLDER_ORGANIZATION_THRESHOLDS = {
+  mixedFolderMinimumAssets: 4,
+  mixedFolderMinimumPerType: 2,
+  deepFolderMinimumDepth: 5,
+  oneOffFolderMinimumDepth: 3,
+  uncategorizedMinimumAssets: 4,
+  uncategorizedMinimumRatio: 0.75,
+} as const;
+
+export function analyzeFolderOrganization(assets: readonly WorkspaceAsset[]): FolderOrganizationReport {
+  const findings: FolderOrganizationFinding[] = [];
+  const byWorkspace = groupBy(assets, (asset) => asset.workspaceFolderUri);
+
+  for (const workspaceAssets of byWorkspace.values()) {
+    if (workspaceAssets.length === 0) continue;
+    findings.push(...analyzeWorkspace(workspaceAssets));
+  }
+
+  findings.sort((left, right) =>
+    left.workspaceFolderName.localeCompare(right.workspaceFolderName)
+    || findingRank(left.kind) - findingRank(right.kind)
+    || left.title.localeCompare(right.title),
+  );
+
+  return {
+    analyzedAssets: assets.length,
+    findings,
+    thresholds: { ...FOLDER_ORGANIZATION_THRESHOLDS },
+  };
+}
+
+function analyzeWorkspace(assets: readonly WorkspaceAsset[]): FolderOrganizationFinding[] {
+  const findings: FolderOrganizationFinding[] = [];
+  const workspaceFolderUri = assets[0].workspaceFolderUri;
+  const workspaceFolderName = assets[0].workspaceFolderName;
+  const byFolder = groupBy(assets, (asset) => folderOf(asset.asset.relativePath));
+
+  const byCharacter = new Map<string, WorkspaceAsset[]>();
+  for (const asset of assets) {
+    if (!asset.character) continue;
+    const list = byCharacter.get(asset.character) ?? [];
+    list.push(asset);
+    byCharacter.set(asset.character, list);
+  }
+
+  for (const [character, characterAssets] of byCharacter) {
+    const folders = uniqueSorted(characterAssets.map((asset) => folderOf(asset.asset.relativePath)));
+    if (folders.length < 2 || characterAssets.length < 2) continue;
+    const types = uniqueSorted(characterAssets.map((asset) => asset.assetType).filter(isString));
+    const target = suggestedCharacterTarget(characterAssets, character, types.length === 1 ? types[0] : undefined);
+    findings.push({
+      kind: "scattered-character",
+      workspaceFolderUri,
+      workspaceFolderName,
+      title: `${character} is spread across ${folders.length} folders`,
+      reason: `${characterAssets.length} assets explicitly assigned to ${character} are stored in multiple folders. Consolidating them may make character work easier.`,
+      affectedFolders: folders,
+      affectedAssets: characterAssets.map(toAssetRef).sort(compareAssetRef),
+      ...(target ? { suggestedTargetFolder: target } : {}),
+    });
+  }
+
+  for (const [folder, folderAssets] of byFolder) {
+    const assignedTypes = folderAssets.map((asset) => asset.assetType).filter(isString);
+    const typeCounts = countValues(assignedTypes);
+    const significantTypes = [...typeCounts.entries()].filter(([, count]) => count >= FOLDER_ORGANIZATION_THRESHOLDS.mixedFolderMinimumPerType);
+    if (
+      folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.mixedFolderMinimumAssets
+      && significantTypes.length >= 2
+    ) {
+      findings.push({
+        kind: "mixed-asset-types",
+        workspaceFolderUri,
+        workspaceFolderName,
+        title: `${displayFolder(folder)} mixes multiple Asset Types`,
+        reason: `${folderAssets.length} assets are in this folder and at least ${FOLDER_ORGANIZATION_THRESHOLDS.mixedFolderMinimumPerType} assets belong to each of ${significantTypes.length} Asset Types (${significantTypes.map(([type, count]) => `${type}: ${count}`).join(", ")}).`,
+        affectedFolders: [folder],
+        affectedAssets: folderAssets.map(toAssetRef).sort(compareAssetRef),
+      });
+    }
+
+    const uncategorized = folderAssets.filter((asset) => !asset.assetType);
+    if (
+      folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumAssets
+      && uncategorized.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumAssets
+      && uncategorized.length / folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumRatio
+    ) {
+      findings.push({
+        kind: "uncategorized-concentration",
+        workspaceFolderUri,
+        workspaceFolderName,
+        title: `${displayFolder(folder)} has many Uncategorized assets`,
+        reason: `${uncategorized.length} of ${folderAssets.length} assets (${Math.round(uncategorized.length / folderAssets.length * 100)}%) have no explicit Asset Type. They remain Uncategorized; no semantic type is inferred.`,
+        affectedFolders: [folder],
+        affectedAssets: uncategorized.map(toAssetRef).sort(compareAssetRef),
+      });
+    }
+
+    const depth = folderDepth(folder);
+    if (depth >= FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth) {
+      findings.push({
+        kind: "deep-nesting",
+        workspaceFolderUri,
+        workspaceFolderName,
+        title: `${displayFolder(folder)} is deeply nested`,
+        reason: `This folder is ${depth} levels deep. The conservative warning threshold is ${FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth} levels.`,
+        affectedFolders: [folder],
+        affectedAssets: folderAssets.map(toAssetRef).sort(compareAssetRef),
+      });
+    }
+  }
+
+  const folders = [...byFolder.keys()];
+  for (const folder of folders) {
+    const folderAssets = byFolder.get(folder) ?? [];
+    const depth = folderDepth(folder);
+    if (folderAssets.length !== 1 || depth < FOLDER_ORGANIZATION_THRESHOLDS.oneOffFolderMinimumDepth) continue;
+    const parent = parentFolder(folder);
+    const siblingFolders = folders.filter((candidate) => candidate !== folder && parentFolder(candidate) === parent);
+    if (siblingFolders.length === 0) continue;
+    findings.push({
+      kind: "one-off-folder",
+      workspaceFolderUri,
+      workspaceFolderName,
+      title: `${displayFolder(folder)} contains only one asset`,
+      reason: `This leaf folder is ${depth} levels deep, contains one image asset, and has sibling folders. It may add navigation depth without much grouping value.`,
+      affectedFolders: [folder],
+      affectedAssets: folderAssets.map(toAssetRef),
+    });
+  }
+
+  return findings;
+}
+
+function suggestedCharacterTarget(assets: readonly WorkspaceAsset[], character: string, assetType?: string): string | undefined {
+  const roots = uniqueSorted(assets.map((asset) => firstSegment(asset.asset.relativePath)).filter(isString));
+  if (roots.length !== 1) return undefined;
+  const characterSegment = slugSegment(character);
+  if (!characterSegment) return undefined;
+  const base = `${roots[0]}/characters/${characterSegment}`;
+  if (!assetType) return base;
+  const typeSegment = slugSegment(assetType);
+  return typeSegment ? `${base}/${typeSegment}` : base;
+}
+
+function folderOf(relativePath: string): string {
+  const normalized = relativePath.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length <= 1 ? "" : parts.slice(0, -1).join("/");
+}
+
+function firstSegment(relativePath: string): string | undefined {
+  const parts = relativePath.replaceAll("\\", "/").split("/").filter(Boolean);
+  return parts.length > 1 ? parts[0] : undefined;
+}
+
+function folderDepth(folder: string): number {
+  return folder ? folder.split("/").filter(Boolean).length : 0;
+}
+
+function parentFolder(folder: string): string {
+  const parts = folder.split("/").filter(Boolean);
+  return parts.slice(0, -1).join("/");
+}
+
+function displayFolder(folder: string): string {
+  return folder || "Workspace root";
+}
+
+function slugSegment(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+}
+
+function toAssetRef(asset: WorkspaceAsset): FolderOrganizationAssetRef {
+  return {
+    workspaceFolderUri: asset.workspaceFolderUri,
+    workspaceFolderName: asset.workspaceFolderName,
+    relativePath: asset.asset.relativePath,
+    ...(asset.assetType ? { assetType: asset.assetType } : {}),
+    ...(asset.character ? { character: asset.character } : {}),
+  };
+}
+
+function compareAssetRef(left: FolderOrganizationAssetRef, right: FolderOrganizationAssetRef): number {
+  return left.relativePath.localeCompare(right.relativePath);
+}
+
+function groupBy<T>(values: readonly T[], keyOf: (value: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const value of values) {
+    const key = keyOf(value);
+    const group = groups.get(key) ?? [];
+    group.push(value);
+    groups.set(key, group);
+  }
+  return groups;
+}
+
+function countValues(values: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+}
+
+function uniqueSorted(values: readonly string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function isString(value: string | undefined): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function findingRank(kind: FolderOrganizationFindingKind): number {
+  return ["scattered-character", "mixed-asset-types", "uncategorized-concentration", "deep-nesting", "one-off-folder"].indexOf(kind);
+}

@@ -8,6 +8,7 @@ import {
 } from "../assetFacets";
 import { type AssetHealthReport, type MissingAssetReference } from "../assetHealthSearch";
 import { AssetDetails } from "../core/assetDetails";
+import { type FolderOrganizationReport } from "../core/folderOrganization";
 import { listCharacterNames, UNASSIGNED_CHARACTER_LABEL } from "../core/assetCharacterGrouping";
 import { suggestCharacterAssignment } from "../core/assetCharacterSuggestion";
 import {
@@ -38,6 +39,7 @@ export interface AssetGridPanelOptions {
   assetProfile: AssetProfile;
   onRefresh: () => Promise<WorkspaceAsset[]>;
   onSearch: (query: string) => WorkspaceAsset[];
+  onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
@@ -56,6 +58,7 @@ export class AssetGridPanel {
   private readonly panel: vscode.WebviewPanel;
   private readonly onRefresh: () => Promise<WorkspaceAsset[]>;
   private readonly onSearch: (query: string) => WorkspaceAsset[];
+  private readonly onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
   private readonly onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   private readonly onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
@@ -103,6 +106,7 @@ export class AssetGridPanel {
     this.assetProfile = options.assetProfile;
     this.onRefresh = options.onRefresh;
     this.onSearch = options.onSearch;
+    this.onAnalyzeOrganization = options.onAnalyzeOrganization;
     this.onSelect = options.onSelect;
     this.onSetAssetType = options.onSetAssetType;
     this.onSetCharacter = options.onSetCharacter;
@@ -132,6 +136,20 @@ export class AssetGridPanel {
       if (isRefreshMessage(message)) {
         const assets = await this.onRefresh();
         this.update(assets);
+        return;
+      }
+
+      if (isAnalyzeOrganizationMessage(message)) {
+        try {
+          const report = await this.onAnalyzeOrganization();
+          if (!this.disposed) {
+            await this.panel.webview.postMessage({ type: "organizationResult", report });
+          }
+        } catch (error) {
+          if (!this.disposed) {
+            await this.panel.webview.postMessage({ type: "organizationError", message: formatError(error) });
+          }
+        }
         return;
       }
 
@@ -522,6 +540,18 @@ function getWebviewHtml(
     .variant-candidate { border: 1px solid var(--vscode-widget-border); border-radius: 4px; padding: 7px; background: var(--vscode-editor-background); }
     .variant-candidate img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--vscode-editor-inactiveSelectionBackground); margin-bottom: 7px; }
     .variant-output { margin-bottom: 8px; overflow-wrap: anywhere; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+    .organization-report { margin-bottom: 16px; border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 14px; background: var(--vscode-sideBar-background); }
+    .organization-report[hidden] { display: none; }
+    .organization-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .organization-header h2 { margin: 0; font-size: 1.05rem; }
+    .organization-header button { margin-left: auto; }
+    .organization-summary { color: var(--vscode-descriptionForeground); margin-bottom: 10px; }
+    .organization-findings { display: grid; gap: 10px; }
+    .organization-finding { border: 1px solid var(--vscode-widget-border); border-radius: 4px; padding: 10px; background: var(--vscode-editor-background); }
+    .organization-finding h3 { margin: 0 0 6px; font-size: 0.95rem; }
+    .organization-reason, .organization-target, .organization-folders { margin-top: 6px; font-size: 0.85em; overflow-wrap: anywhere; }
+    .organization-target { font-weight: 600; }
+    .organization-assets { margin: 7px 0 0; padding-left: 20px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
     @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px; } .grid, .character-assets { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
@@ -532,6 +562,7 @@ function getWebviewHtml(
   <div class="toolbar">
     <input id="search" class="search" type="search" placeholder="Search filename or path" aria-label="Search assets">
     <div id="summary" class="summary">${assets.length} image asset${assets.length === 1 ? "" : "s"}</div>
+    <button id="analyze-organization" class="secondary" type="button">Analyze Organization</button>
     <button id="refresh" type="button">Refresh</button>
   </div>
   <div class="facets" aria-label="Asset filters">
@@ -544,6 +575,7 @@ function getWebviewHtml(
     <span id="filter-status" class="filter-status">No facet filters</span>
     <span class="profile-status">Profile: ${escapeHtml(assetProfile.label)}</span>
   </div>
+  <section id="organization-report" class="organization-report" hidden></section>
   ${body}
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -561,10 +593,17 @@ function getWebviewHtml(
     const workspaceFilter = document.getElementById('workspace-filter');
     const clearFilters = document.getElementById('clear-filters');
     const filterStatus = document.getElementById('filter-status');
+    const organizationReport = document.getElementById('organization-report');
+    const analyzeOrganization = document.getElementById('analyze-organization');
     let selectedIdentity = null;
     let scrollFramePending = false;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+    analyzeOrganization.addEventListener('click', () => {
+      analyzeOrganization.disabled = true;
+      analyzeOrganization.textContent = 'Analyzing…';
+      vscode.postMessage({ type: 'analyzeOrganization' });
+    });
     if (viewModeControl) viewModeControl.addEventListener('change', () => {
       applyViewMode(viewModeControl.value);
       vscode.postMessage({ type: 'viewMode', viewMode: viewModeControl.value });
@@ -629,6 +668,20 @@ function getWebviewHtml(
         return;
       }
 
+      if (message.type === 'organizationResult') {
+        analyzeOrganization.disabled = false;
+        analyzeOrganization.textContent = 'Analyze Organization';
+        renderOrganizationReport(message.report);
+        return;
+      }
+
+      if (message.type === 'organizationError') {
+        analyzeOrganization.disabled = false;
+        analyzeOrganization.textContent = 'Analyze Organization';
+        renderOrganizationError(message.message || 'Organization analysis failed.');
+        return;
+      }
+
       if (message.type === 'assetDetails') {
         renderDetails(message.result);
         return;
@@ -689,6 +742,89 @@ function getWebviewHtml(
         if (status) status.textContent = 'Candidates rejected. No project asset was written.';
       }
     });
+
+    function renderOrganizationReport(report) {
+      if (!organizationReport) return;
+      organizationReport.hidden = false;
+      organizationReport.replaceChildren();
+      const header = document.createElement('div');
+      header.className = 'organization-header';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Folder Organization';
+      const close = actionButton('Close', true, () => { organizationReport.hidden = true; });
+      header.append(heading, close);
+      organizationReport.appendChild(header);
+
+      const findings = report && Array.isArray(report.findings) ? report.findings : [];
+      const summary = document.createElement('div');
+      summary.className = 'organization-summary';
+      const analyzed = report && Number.isFinite(report.analyzedAssets) ? report.analyzedAssets : 0;
+      summary.textContent = findings.length === 0
+        ? 'No organization findings across ' + analyzed + ' analyzed assets.'
+        : findings.length + ' finding' + (findings.length === 1 ? '' : 's') + ' across ' + analyzed + ' analyzed assets. Read-only: no files or metadata were changed.';
+      organizationReport.appendChild(summary);
+      if (findings.length === 0) return;
+
+      const list = document.createElement('div');
+      list.className = 'organization-findings';
+      findings.forEach((finding) => {
+        const card = document.createElement('article');
+        card.className = 'organization-finding';
+        const title = document.createElement('h3');
+        title.textContent = finding.title || finding.kind || 'Organization finding';
+        const reason = document.createElement('div');
+        reason.className = 'organization-reason';
+        reason.textContent = finding.reason || '';
+        card.append(title, reason);
+        if (Array.isArray(finding.affectedFolders) && finding.affectedFolders.length > 0) {
+          const folders = document.createElement('div');
+          folders.className = 'organization-folders';
+          folders.textContent = 'Folders: ' + finding.affectedFolders.map((folder) => folder || 'Workspace root').join(', ');
+          card.appendChild(folders);
+        }
+        if (finding.suggestedTargetFolder) {
+          const target = document.createElement('div');
+          target.className = 'organization-target';
+          target.textContent = 'Suggested target: ' + finding.suggestedTargetFolder;
+          card.appendChild(target);
+        }
+        if (Array.isArray(finding.affectedAssets) && finding.affectedAssets.length > 0) {
+          const assets = document.createElement('ul');
+          assets.className = 'organization-assets';
+          finding.affectedAssets.slice(0, 12).forEach((asset) => {
+            const item = document.createElement('li');
+            const metadata = [asset.assetType ? 'Type: ' + asset.assetType : 'Uncategorized', asset.character ? 'Character: ' + asset.character : 'Unassigned'];
+            item.textContent = asset.relativePath + ' · ' + metadata.join(' · ');
+            assets.appendChild(item);
+          });
+          if (finding.affectedAssets.length > 12) {
+            const more = document.createElement('li');
+            more.textContent = '+' + (finding.affectedAssets.length - 12) + ' more assets';
+            assets.appendChild(more);
+          }
+          card.appendChild(assets);
+        }
+        list.appendChild(card);
+      });
+      organizationReport.appendChild(list);
+      organizationReport.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderOrganizationError(message) {
+      if (!organizationReport) return;
+      organizationReport.hidden = false;
+      organizationReport.replaceChildren();
+      const header = document.createElement('div');
+      header.className = 'organization-header';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Folder Organization';
+      const close = actionButton('Close', true, () => { organizationReport.hidden = true; });
+      header.append(heading, close);
+      const error = document.createElement('div');
+      error.className = 'missing';
+      error.textContent = message;
+      organizationReport.append(header, error);
+    }
 
     function currentFacets() {
       return {
@@ -1359,6 +1495,10 @@ function isReadyMessage(message: unknown): message is { type: "ready" } {
 
 function isRefreshMessage(message: unknown): message is { type: "refresh" } {
   return typeof message === "object" && message !== null && "type" in message && message.type === "refresh";
+}
+
+function isAnalyzeOrganizationMessage(message: unknown): message is { type: "analyzeOrganization" } {
+  return typeof message === "object" && message !== null && "type" in message && message.type === "analyzeOrganization";
 }
 
 function isFilterMessage(message: unknown): message is { type: "filter"; query: string; facets: AssetFacetSelection } {
