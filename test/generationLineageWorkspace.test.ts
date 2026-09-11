@@ -22,7 +22,7 @@ function receipt(output = "assets/hero-run.png"): GenerationInvocationReceipt {
         width: 1024,
         height: 1024,
         format: "png",
-        alpha: "required",
+        alpha: "require",
         writeMode: "create",
       },
     },
