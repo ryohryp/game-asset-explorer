@@ -1,11 +1,18 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import {
+  GENERATION_LINEAGE_PATH,
+} from "./core/generationLineage";
+import {
   isSafeWorkspaceRelativePath,
   normalizeWorkspacePath,
   type GenerationPackage,
 } from "./core/generationPackage";
 import { startVariantReviewSession, type VariantReviewSession } from "./core/variantReviewSession";
+import {
+  persistApprovedGenerationLineage,
+  type GenerationLineageWorkspaceStore,
+} from "./generationLineageWorkspace";
 import {
   OpenAiImageGenerationProvider,
   type ReferenceImageData,
@@ -22,16 +29,12 @@ export async function storeOpenAiApiKey(context: vscode.ExtensionContext): Promi
     password: true,
     ignoreFocusOut: true,
   });
-  if (value === undefined) {
-    return false;
-  }
-
+  if (value === undefined) return false;
   const apiKey = value.trim();
   if (!apiKey) {
     await vscode.window.showWarningMessage("Game Asset Explorer: API key was not changed because the value was empty.");
     return false;
   }
-
   await context.secrets.store(OPENAI_API_KEY_SECRET, apiKey);
   await vscode.window.showInformationMessage("Game Asset Explorer: OpenAI API key stored securely.");
   return true;
@@ -45,16 +48,12 @@ export async function startOpenAiVariantReview(
 ): Promise<VariantReviewSession> {
   const workspaceFolder = resolveWorkspaceFolder(selectedAsset);
   const apiKey = (await context.secrets.get(OPENAI_API_KEY_SECRET))?.trim();
-  if (!apiKey) {
-    throw new Error("OpenAI API key is not configured. Run 'Game Asset Explorer: Set OpenAI API Key' first.");
-  }
-
+  if (!apiKey) throw new Error("OpenAI API key is not configured. Run 'Game Asset Explorer: Set OpenAI API Key' first.");
   const validationContext = getGenerationValidationContext(selectedAsset, allAssets);
   const provider = new OpenAiImageGenerationProvider({
     apiKey,
     loadReference: (relativePath) => loadReferenceImage(workspaceFolder, relativePath),
   });
-
   return startVariantReviewSession(provider, generationPackage, validationContext);
 }
 
@@ -66,60 +65,91 @@ export async function approveVariantIntoWorkspace(
 ): Promise<void> {
   const workspaceFolder = resolveWorkspaceFolder(selectedAsset);
   const validationContext = getGenerationValidationContext(selectedAsset, allAssets);
+  const lineageStore = createLineageStore(workspaceFolder);
+  const outputPath = assertSafeRelativePath(session.generationPackage.output.relativePath);
+  const outputUri = toWorkspaceUri(workspaceFolder, outputPath);
 
-  await session.approve(candidateId, {
-    currentAssetPaths: validationContext.availableAssetPaths,
-    writer: {
-      write: async (relativePath, bytes) => {
-        const normalized = assertSafeRelativePath(relativePath);
-        const target = toWorkspaceUri(workspaceFolder, normalized);
+  // Validate and persist lineage first. If the image write then fails, restore the prior
+  // metadata so approval never silently leaves a lineage record for a missing asset.
+  const previousLineage = await lineageStore.read(GENERATION_LINEAGE_PATH);
+  await persistApprovedGenerationLineage(
+    lineageStore,
+    session.receipt,
+    candidateId,
+    new Date().toISOString(),
+  );
 
-        if (await uriExists(target)) {
-          throw new Error("Generation output already exists; refusing to overwrite it.");
-        }
-
-        const parentPath = path.posix.dirname(normalized);
-        if (parentPath !== ".") {
-          await vscode.workspace.fs.createDirectory(toWorkspaceUri(workspaceFolder, parentPath));
-        }
-        if (await uriExists(target)) {
-          throw new Error("Generation output appeared during approval; refusing to overwrite it.");
-        }
-        await vscode.workspace.fs.writeFile(target, bytes);
+  try {
+    await session.approve(candidateId, {
+      currentAssetPaths: validationContext.availableAssetPaths,
+      writer: {
+        write: async (relativePath, bytes) => {
+          const normalized = assertSafeRelativePath(relativePath);
+          const target = toWorkspaceUri(workspaceFolder, normalized);
+          if (await uriExists(target)) throw new Error("Generation output already exists; refusing to overwrite it.");
+          const parentPath = path.posix.dirname(normalized);
+          if (parentPath !== ".") await vscode.workspace.fs.createDirectory(toWorkspaceUri(workspaceFolder, parentPath));
+          if (await uriExists(target)) throw new Error("Generation output appeared during approval; refusing to overwrite it.");
+          await vscode.workspace.fs.writeFile(target, bytes);
+        },
       },
+    });
+  } catch (error) {
+    await restoreLineage(workspaceFolder, previousLineage);
+    throw error;
+  }
+
+  if (!(await uriExists(outputUri))) {
+    await restoreLineage(workspaceFolder, previousLineage);
+    throw new Error("Generation approval completed without a visible output asset; lineage was rolled back.");
+  }
+}
+
+function createLineageStore(workspaceFolder: vscode.WorkspaceFolder): GenerationLineageWorkspaceStore {
+  return {
+    read: async (relativePath) => {
+      const uri = toWorkspaceUri(workspaceFolder, relativePath);
+      try {
+        return new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+      } catch (error) {
+        if (error instanceof vscode.FileSystemError && error.code === "FileNotFound") return undefined;
+        throw error;
+      }
     },
-  });
+    write: async (relativePath, content) => {
+      const uri = toWorkspaceUri(workspaceFolder, relativePath);
+      await vscode.workspace.fs.createDirectory(toWorkspaceUri(workspaceFolder, path.posix.dirname(relativePath)));
+      await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content));
+    },
+  };
+}
+
+async function restoreLineage(workspaceFolder: vscode.WorkspaceFolder, previous: string | undefined): Promise<void> {
+  const uri = toWorkspaceUri(workspaceFolder, GENERATION_LINEAGE_PATH);
+  if (previous === undefined) {
+    try { await vscode.workspace.fs.delete(uri); } catch (error) {
+      if (!(error instanceof vscode.FileSystemError && error.code === "FileNotFound")) throw error;
+    }
+    return;
+  }
+  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(previous));
 }
 
 function resolveWorkspaceFolder(selectedAsset: WorkspaceAsset): vscode.WorkspaceFolder {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.find(
-    (folder) => folder.uri.toString() === selectedAsset.workspaceFolderUri,
-  );
-  if (!workspaceFolder) {
-    throw new Error("Selected asset workspace is no longer available.");
-  }
+  const workspaceFolder = vscode.workspace.workspaceFolders?.find((folder) => folder.uri.toString() === selectedAsset.workspaceFolderUri);
+  if (!workspaceFolder) throw new Error("Selected asset workspace is no longer available.");
   return workspaceFolder;
 }
 
-async function loadReferenceImage(
-  workspaceFolder: vscode.WorkspaceFolder,
-  relativePath: string,
-): Promise<ReferenceImageData> {
+async function loadReferenceImage(workspaceFolder: vscode.WorkspaceFolder, relativePath: string): Promise<ReferenceImageData> {
   const normalized = assertSafeRelativePath(relativePath);
-  const uri = toWorkspaceUri(workspaceFolder, normalized);
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  return {
-    bytes,
-    mediaType: mediaTypeForPath(normalized),
-    fileName: path.posix.basename(normalized),
-  };
+  const bytes = await vscode.workspace.fs.readFile(toWorkspaceUri(workspaceFolder, normalized));
+  return { bytes, mediaType: mediaTypeForPath(normalized), fileName: path.posix.basename(normalized) };
 }
 
 function assertSafeRelativePath(relativePath: string): string {
   const normalized = normalizeWorkspacePath(relativePath);
-  if (!isSafeWorkspaceRelativePath(normalized)) {
-    throw new Error("Generation path must stay inside the selected workspace.");
-  }
+  if (!isSafeWorkspaceRelativePath(normalized)) throw new Error("Generation path must stay inside the selected workspace.");
   return normalized;
 }
 
@@ -128,13 +158,8 @@ function toWorkspaceUri(workspaceFolder: vscode.WorkspaceFolder, relativePath: s
 }
 
 async function uriExists(uri: vscode.Uri): Promise<boolean> {
-  try {
-    await vscode.workspace.fs.stat(uri);
-    return true;
-  } catch (error) {
-    if (error instanceof vscode.FileSystemError && error.code === "FileNotFound") {
-      return false;
-    }
+  try { await vscode.workspace.fs.stat(uri); return true; } catch (error) {
+    if (error instanceof vscode.FileSystemError && error.code === "FileNotFound") return false;
     throw error;
   }
 }
