@@ -28,6 +28,16 @@ export interface GenerationLineageDocument {
   records: GenerationLineageRecord[];
 }
 
+export interface GenerationLineagePathView {
+  path: string;
+  exists: boolean;
+}
+
+export interface GenerationLineageAssetView {
+  sources: GenerationLineagePathView[];
+  variants: GenerationLineagePathView[];
+}
+
 export class GenerationLineageError extends Error {
   constructor(message: string) {
     super(message);
@@ -78,6 +88,26 @@ export function createApprovedGenerationLineageRecord(
     createdAt: normalizeTimestamp(createdAt),
     approvalStatus: "approved",
   };
+}
+
+export function buildGenerationLineageAssetView(
+  document: GenerationLineageDocument,
+  assetPath: string,
+  existingAssetPaths: readonly string[],
+): GenerationLineageAssetView {
+  const selectedPath = normalizeAndAssertSafePath(assetPath, "assetPath");
+  const existing = new Set(existingAssetPaths.map((path, index) =>
+    normalizeAndAssertSafePath(path, `existingAssetPaths[${index}]`),
+  ));
+  const selectedRecord = document.records.find((record) => record.assetPath === selectedPath);
+  const sources = (selectedRecord?.sourcePaths ?? [])
+    .map((path) => ({ path, exists: existing.has(path) }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const variants = document.records
+    .filter((record) => record.sourcePaths.includes(selectedPath))
+    .map((record) => ({ path: record.assetPath, exists: existing.has(record.assetPath) }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return { sources, variants };
 }
 
 export function parseGenerationLineage(text: string): GenerationLineageDocument {

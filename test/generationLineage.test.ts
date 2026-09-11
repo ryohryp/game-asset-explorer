@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createGenerationPackage } from "../src/core/generationPackage";
 import {
+  buildGenerationLineageAssetView,
   createApprovedGenerationLineageRecord,
   GenerationLineageError,
   parseGenerationLineage,
@@ -149,5 +150,64 @@ test("manual assets need no lineage entry", () => {
   assert.deepEqual(
     parseGenerationLineage('{"schemaVersion":1,"records":[]}'),
     { schemaVersion: 1, records: [] },
+  );
+});
+
+
+test("builds source and variant relationships with visible missing paths", () => {
+  const child = createApprovedGenerationLineageRecord(
+    createReceipt(),
+    "candidate-a",
+    "2026-09-11T03:00:00Z",
+  );
+  const siblingReceipt = createReceipt();
+  siblingReceipt.generationPackage.output.relativePath = "assets/hero_jump.png";
+  siblingReceipt.generationPackage.references = [
+    { relativePath: "assets/hero.png", role: "source", required: true },
+  ];
+  const sibling = createApprovedGenerationLineageRecord(
+    siblingReceipt,
+    "candidate-b",
+    "2026-09-11T04:00:00Z",
+  );
+  const document = { schemaVersion: 1 as const, records: [child, sibling] };
+
+  assert.deepEqual(
+    buildGenerationLineageAssetView(document, "assets/hero_battle.png", [
+      "assets/hero_battle.png",
+      "assets/hero.png",
+    ]),
+    {
+      sources: [
+        { path: "assets/hero.png", exists: true },
+        { path: "assets/style.png", exists: false },
+      ],
+      variants: [],
+    },
+  );
+
+  assert.deepEqual(
+    buildGenerationLineageAssetView(document, "assets/hero.png", [
+      "assets/hero.png",
+      "assets/hero_battle.png",
+    ]),
+    {
+      sources: [],
+      variants: [
+        { path: "assets/hero_battle.png", exists: true },
+        { path: "assets/hero_jump.png", exists: false },
+      ],
+    },
+  );
+});
+
+test("returns empty relationships for a manual asset with no lineage", () => {
+  assert.deepEqual(
+    buildGenerationLineageAssetView(
+      { schemaVersion: 1, records: [] },
+      "assets/manual.png",
+      ["assets/manual.png"],
+    ),
+    { sources: [], variants: [] },
   );
 });

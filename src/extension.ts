@@ -8,6 +8,7 @@ import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
 import { DebouncedAction } from "./core/debouncedAction";
+import { GENERATION_LINEAGE_PATH } from "./core/generationLineage";
 import { VISUAL_CANON_PATH } from "./core/visualCanon";
 import {
   loadWorkspaceAssetTypes,
@@ -15,6 +16,10 @@ import {
   updateWorkspaceAssetType,
   type WorkspaceAssetTypeStore,
 } from "./assetTypeWorkspace";
+import {
+  loadWorkspaceGenerationLineageForAsset,
+  type WorkspaceGenerationLineageReader,
+} from "./generationLineageWorkspace";
 import { AssetGridPanel } from "./ui/assetGridPanel";
 import { findWorkspaceAssetUsages, openAssetUsage } from "./usageSearch";
 import {
@@ -68,6 +73,20 @@ export function activate(context: vscode.ExtensionContext): void {
       const canonUri = vscode.Uri.joinPath(vscode.Uri.parse(workspaceFolderUri), VISUAL_CANON_PATH);
       try {
         return new TextDecoder().decode(await vscode.workspace.fs.readFile(canonUri));
+      } catch (error) {
+        if (isFileNotFound(error)) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
+  };
+
+  const generationLineageReader: WorkspaceGenerationLineageReader = {
+    read: async (workspaceFolderUri) => {
+      const lineageUri = vscode.Uri.joinPath(vscode.Uri.parse(workspaceFolderUri), GENERATION_LINEAGE_PATH);
+      try {
+        return new TextDecoder().decode(await vscode.workspace.fs.readFile(lineageUri));
       } catch (error) {
         if (isFileNotFound(error)) {
           return undefined;
@@ -216,6 +235,17 @@ export function activate(context: vscode.ExtensionContext): void {
         visualCanonWatcher.onDidChange(onVisualCanonEvent),
         visualCanonWatcher.onDidDelete(onVisualCanonEvent),
       );
+
+      const lineageWatcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspaceFolder, GENERATION_LINEAGE_PATH),
+      );
+      const onLineageEvent = (): void => watcherRefresh?.trigger();
+      watcherDisposables.push(
+        lineageWatcher,
+        lineageWatcher.onDidCreate(onLineageEvent),
+        lineageWatcher.onDidChange(onLineageEvent),
+        lineageWatcher.onDidDelete(onLineageEvent),
+      );
     }
   };
 
@@ -266,20 +296,26 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         const details = await loadAssetDetails(workspaceAsset.asset);
+        let visualCanon: { memberships: Awaited<ReturnType<typeof loadWorkspaceVisualCanonForAsset>>["memberships"]; error?: string };
         try {
-          const visualCanon = await loadWorkspaceVisualCanonForAsset(workspaceAsset, visualCanonReader);
-          return {
-            ...details,
-            workspaceAsset,
-            visualCanon: { memberships: visualCanon.memberships },
-          };
+          const state = await loadWorkspaceVisualCanonForAsset(workspaceAsset, visualCanonReader);
+          visualCanon = { memberships: state.memberships };
         } catch (error) {
-          return {
-            ...details,
-            workspaceAsset,
-            visualCanon: { memberships: [], error: formatError(error) },
-          };
+          visualCanon = { memberships: [], error: formatError(error) };
         }
+
+        let lineage: { sources: Array<{ path: string; exists: boolean }>; variants: Array<{ path: string; exists: boolean }>; error?: string };
+        try {
+          lineage = await loadWorkspaceGenerationLineageForAsset(
+            workspaceAsset,
+            discoveredAssets,
+            generationLineageReader,
+          );
+        } catch (error) {
+          lineage = { sources: [], variants: [], error: formatError(error) };
+        }
+
+        return { ...details, workspaceAsset, visualCanon, lineage };
       },
       onSetAssetType: async (identity, assetType) => {
         const workspaceAsset = findAsset(identity);
