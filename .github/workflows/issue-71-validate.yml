@@ -1,0 +1,33 @@
+name: Issue 71 Validate
+
+on:
+  push:
+    branches:
+      - feat/71-copy-organization-prompt
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply implementation locally
+        run: python .github/issue71_apply.py
+      - name: Install dependencies
+        run: npm install
+      - name: Test
+        run: npm test
+      - name: Collect patched files
+        run: |
+          mkdir -p issue71-output/src/core issue71-output/src/ui issue71-output/test
+          cp src/core/organizationPrompt.ts issue71-output/src/core/
+          cp src/extension.ts issue71-output/src/
+          cp src/ui/assetGridPanel.ts issue71-output/src/ui/
+          cp test/organizationPrompt.test.ts issue71-output/test/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: issue71-output
+          path: issue71-output
