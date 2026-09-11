@@ -121,3 +121,8 @@ For unassigned assets, Asset Details can suggest a character from existing chara
 Assets can optionally be assigned to a character in Asset Details. Switch the Asset Grid **View** control to **Characters** to group standing art, expressions, portraits, icons, battle sprites, and other cross-type images by character without changing the project folder structure.
 
 Character assignments reuse `.game-asset-explorer/asset-types.json` as project-local Git-friendly metadata. Assets without an assignment appear under **Unassigned**. Search and existing facets still filter the grouped view.
+
+
+## Folder organization analysis
+
+Use **Analyze Organization** in the Asset Grid to run a read-only review of the current filesystem layout. The report highlights explainable signals such as characters spread across folders, significant Asset Type mixing, deep nesting, one-off leaf folders, and concentrations of Uncategorized assets. When Character / Asset Type metadata provides a clear basis, the report may suggest a target folder. Analysis never moves files, creates folders, changes metadata, or rewrites references.
