@@ -4,6 +4,7 @@ import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetD
 import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
 import { analyzeFolderOrganization } from "./core/folderOrganization";
+import { buildOrganizationPrompt } from "./core/organizationPrompt";
 import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
@@ -259,6 +260,10 @@ export function activate(context: vscode.ExtensionContext): void {
       onRefresh: () => scanAndStore(false),
       onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
       onAnalyzeOrganization: async () => analyzeFolderOrganization(discoveredAssets),
+      onCopyOrganizationPrompt: async () => {
+        const report = analyzeFolderOrganization(discoveredAssets);
+        await vscode.env.clipboard.writeText(buildOrganizationPrompt(report, discoveredAssets));
+      },
       onSelect: async (identity) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
