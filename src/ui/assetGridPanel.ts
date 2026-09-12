@@ -8,6 +8,7 @@ import {
 } from "../assetFacets";
 import { type AssetHealthReport, type MissingAssetReference } from "../assetHealthSearch";
 import { AssetDetails } from "../core/assetDetails";
+import type { GenerationLineageAssetView } from "../core/generationLineage";
 import { type FolderOrganizationReport } from "../core/folderOrganization";
 import { listCharacterNames, UNASSIGNED_CHARACTER_LABEL } from "../core/assetCharacterGrouping";
 import { suggestCharacterAssignment } from "../core/assetCharacterSuggestion";
@@ -29,7 +30,13 @@ import {
 import { getWorkspaceAssetIdentity, WorkspaceAsset } from "../workspaceAsset";
 
 export type AssetSelectionResult =
-  | { status: "available"; workspaceAsset: WorkspaceAsset; details: AssetDetails; visualCanon?: { memberships: VisualCanonMembership[]; error?: string } }
+  | {
+      status: "available";
+      workspaceAsset: WorkspaceAsset;
+      details: AssetDetails;
+      visualCanon?: { memberships: VisualCanonMembership[]; error?: string };
+      lineage?: GenerationLineageAssetView & { error?: string };
+    }
   | { status: "missing"; workspaceAsset?: WorkspaceAsset };
 
 type AssetViewMode = "grid" | "character";
@@ -955,6 +962,7 @@ function getWebviewHtml(
       addAssetTypeControl(result.workspaceAsset.assetType);
       addCharacterControl(result.workspaceAsset.character, selectedIdentity ? characterSuggestions[selectedIdentity] : undefined);
       addVisualCanonDetails(result.visualCanon);
+      addGenerationLineageDetails(result.lineage);
       addDetailRow('Format', asset.fileType.toUpperCase());
       addDetailRow('Size', formatBytes(result.details.sizeBytes));
       addDetailRow('Modified', new Date(result.details.modifiedAt).toLocaleString());
@@ -1012,6 +1020,35 @@ function getWebviewHtml(
       }
       const prefix = memberships.length === 1 ? '1 membership · ' : memberships.length + ' memberships · ';
       addDetailRow('Visual Canon', prefix + memberships.map((membership) => membership.id + ' [' + membership.kind + '] · anchor').join(', '));
+    }
+
+    function addGenerationLineageDetails(state) {
+      if (!state) {
+        addDetailRow('Lineage', 'None');
+        return;
+      }
+      if (state.error) {
+        addDetailRow('Lineage', 'Invalid · ' + state.error);
+        return;
+      }
+      const sources = Array.isArray(state.sources) ? state.sources : [];
+      const variants = Array.isArray(state.variants) ? state.variants : [];
+      if (sources.length === 0 && variants.length === 0) {
+        addDetailRow('Lineage', 'No recorded relationships');
+        return;
+      }
+      if (sources.length > 0) {
+        addDetailRow(
+          'Sources',
+          sources.map((entry) => entry.path + (entry.exists ? '' : ' · Missing')).join(', '),
+        );
+      }
+      if (variants.length > 0) {
+        addDetailRow(
+          'Known Variants',
+          variants.map((entry) => entry.path + (entry.exists ? '' : ' · Missing')).join(', '),
+        );
+      }
     }
 
     function addAssetTypeControl(currentType) {
