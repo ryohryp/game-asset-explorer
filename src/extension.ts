@@ -300,8 +300,8 @@ export function activate(context: vscode.ExtensionContext): void {
       onBulkAssignAssetType: async (workspaceFolderUri, folder, assetType) => {
         activeProfile = getConfiguredAssetProfile();
         const report = analyzeFolderOrganization(discoveredAssets);
-        const eligible = report.findings.some((finding) =>
-          finding.kind === "uncategorized-concentration"
+        const eligible = report.metadataFindings.some((finding) =>
+          finding.kind === "uncategorized-assets"
           && finding.workspaceFolderUri === workspaceFolderUri
           && finding.affectedFolders.length === 1
           && finding.affectedFolders[0] === folder,

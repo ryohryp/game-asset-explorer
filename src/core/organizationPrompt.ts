@@ -26,6 +26,16 @@ export function buildOrganizationPrompt(
       `   Affected assets: ${finding.affectedAssets.length}`,
     ]);
 
+  const metadataFindingLines = report.metadataFindings.length === 0
+    ? ["- No metadata hygiene findings were detected by the current bounded rules."]
+    : report.metadataFindings.flatMap((finding, index) => [
+      `${index + 1}. ${finding.title}`,
+      `   Workspace: ${finding.workspaceFolderName}`,
+      `   Reason: ${finding.reason}`,
+      `   Folders: ${finding.affectedFolders.map((folder) => folder || "Workspace root").join(", ")}`,
+      `   Affected assets: ${finding.affectedAssets.length}`,
+    ]);
+
   const assetLines = includedAssets.map((asset) => {
     const metadata = [
       asset.assetType ? `Type=${asset.assetType}` : "Type=Uncategorized",
@@ -53,6 +63,7 @@ export function buildOrganizationPrompt(
     "- It is valid for the recommended move count to be zero.",
     "- Do not propose a move merely to silence a static-analysis warning.",
     "- Prefer metadata correction over filesystem changes when the existing folder structure is semantically coherent.",
+    "- Metadata Hygiene findings describe missing or inconsistent explicit metadata; they do not imply that files should be moved.",
     "- Avoid unnecessary folder depth and one-off folders.",
     "- Keep related assets together when the existing metadata provides a clear basis.",
     "- Flag uncertain recommendations instead of guessing.",
@@ -77,8 +88,11 @@ export function buildOrganizationPrompt(
     "",
     `Active Asset Profile types: ${activeAssetTypes.length > 0 ? activeAssetTypes.join(", ") : "(none supplied; do not recommend concrete Asset Types)"}`,
     "",
-    `Organization findings (${report.findings.length} across ${report.analyzedAssets} analyzed assets):`,
+    `Folder Organization findings (${report.findings.length} across ${report.analyzedAssets} analyzed assets):`,
     ...findingLines,
+    "",
+    `Metadata Hygiene findings (${report.metadataFindings.length}):`,
+    ...metadataFindingLines,
     "",
     `Asset summary (${includedAssets.length} shown${omittedCount > 0 ? `, ${omittedCount} omitted` : ""}):`,
     ...assetLines,
