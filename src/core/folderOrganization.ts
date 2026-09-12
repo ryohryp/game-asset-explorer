@@ -138,13 +138,14 @@ function analyzeWorkspace(assets: readonly WorkspaceAsset[]): FolderOrganization
     }
 
     const depth = folderDepth(folder);
-    if (depth >= FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth) {
+    const effectiveDepth = effectiveFolderDepth(folder);
+    if (effectiveDepth >= FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth) {
       findings.push({
         kind: "deep-nesting",
         workspaceFolderUri,
         workspaceFolderName,
         title: `${displayFolder(folder)} is deeply nested`,
-        reason: `This folder is ${depth} levels deep. The conservative warning threshold is ${FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth} levels.`,
+        reason: `This folder is ${depth} levels deep (${effectiveDepth} structural levels after ignoring version-like segments such as v1/v2). The conservative warning threshold is ${FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth} structural levels.`,
         affectedFolders: [folder],
         affectedAssets: folderAssets.map(toAssetRef).sort(compareAssetRef),
       });
@@ -159,6 +160,7 @@ function analyzeWorkspace(assets: readonly WorkspaceAsset[]): FolderOrganization
     const parent = parentFolder(folder);
     const siblingFolders = folders.filter((candidate) => candidate !== folder && parentFolder(candidate) === parent);
     if (siblingFolders.length === 0) continue;
+    if (looksLikePeerNamespaceFolder(folder, folders, byFolder)) continue;
     findings.push({
       kind: "one-off-folder",
       workspaceFolderUri,
@@ -197,6 +199,31 @@ function firstSegment(relativePath: string): string | undefined {
 
 function folderDepth(folder: string): number {
   return folder ? folder.split("/").filter(Boolean).length : 0;
+}
+
+function effectiveFolderDepth(folder: string): number {
+  return folder ? folder.split("/").filter((segment) => segment.length > 0 && !isVersionLikeSegment(segment)).length : 0;
+}
+
+function isVersionLikeSegment(segment: string): boolean {
+  return /^v\d+(?:[._-]\d+)*$/i.test(segment);
+}
+
+function looksLikePeerNamespaceFolder(
+  folder: string,
+  folders: readonly string[],
+  byFolder: ReadonlyMap<string, WorkspaceAsset[]>,
+): boolean {
+  const parent = parentFolder(folder);
+  const peers = folders.filter((candidate) => parentFolder(candidate) === parent);
+  if (peers.length < 3) return false;
+
+  return peers.every((peer) => {
+    const directAssets = byFolder.get(peer) ?? [];
+    if (directAssets.length === 0 || directAssets.length > 2) return false;
+    const prefix = `${peer}/`;
+    return !folders.some((candidate) => candidate !== peer && candidate.startsWith(prefix));
+  });
 }
 
 function parentFolder(folder: string): string {
