@@ -4,6 +4,7 @@ import { resolveAssetProfile } from "../src/core/assetProfiles";
 import {
   loadWorkspaceAssetTypes,
   updateWorkspaceAssetType,
+  updateWorkspaceAssetTypes,
   type WorkspaceAssetTypeStore,
 } from "../src/assetTypeWorkspace";
 import { type WorkspaceAsset } from "../src/workspaceAsset";
@@ -66,4 +67,29 @@ test("writes a Git-friendly assignment and clears it back to Uncategorized", asy
 
   await updateWorkspaceAssetType(selected, undefined, profile, store);
   assert.doesNotMatch(store.values["file:///game"], /assets\/hero\.png/);
+});
+
+
+test("bulk type assignment updates only provided Uncategorized assets and preserves other assignments", async () => {
+  const store = memoryStore({
+    "file:///game": JSON.stringify({ schemaVersion: 1, assignments: { "assets/backgrounds/already.png": "Background", "assets/icons/keep.png": "UI" } }),
+  });
+  const profile = resolveAssetProfile("generic");
+  const first = asset("file:///game", "assets/backgrounds/one.png");
+  const second = asset("file:///game", "assets/backgrounds/two.png");
+  const alreadyTyped = { ...asset("file:///game", "assets/backgrounds/already.png"), assetType: "Background" };
+  const count = await updateWorkspaceAssetTypes([first, second, alreadyTyped], "Background", profile, store);
+  assert.equal(count, 2);
+  const text = store.values["file:///game"];
+  assert.match(text, /"assets\/backgrounds\/one.png": "Background"/);
+  assert.match(text, /"assets\/backgrounds\/two.png": "Background"/);
+  assert.match(text, /"assets\/backgrounds\/already.png": "Background"/);
+  assert.match(text, /"assets\/icons\/keep.png": "UI"/);
+});
+
+test("bulk type assignment refuses to cross workspace boundaries", async () => {
+  const store = memoryStore();
+  await assert.rejects(() => updateWorkspaceAssetTypes([
+    asset("file:///game-a", "assets/a.png"), asset("file:///game-b", "assets/b.png"),
+  ], "Background", resolveAssetProfile("generic"), store), /one workspace/);
 });

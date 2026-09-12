@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
 import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
+import { selectUncategorizedAssetsInFolder } from "./core/bulkAssetTypeAssignment";
 import { analyzeFolderOrganization } from "./core/folderOrganization";
 import { buildOrganizationPrompt } from "./core/organizationPrompt";
 import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
@@ -15,6 +16,7 @@ import {
   loadWorkspaceAssetTypes,
   updateWorkspaceAssetCharacter,
   updateWorkspaceAssetType,
+  updateWorkspaceAssetTypes,
   type WorkspaceAssetTypeStore,
 } from "./assetTypeWorkspace";
 import {
@@ -293,6 +295,23 @@ export function activate(context: vscode.ExtensionContext): void {
       onCopyOrganizationPrompt: async () => {
         const report = analyzeFolderOrganization(discoveredAssets);
         await vscode.env.clipboard.writeText(buildOrganizationPrompt(report, discoveredAssets));
+      },
+      onBulkAssignAssetType: async (workspaceFolderUri, folder, assetType) => {
+        activeProfile = getConfiguredAssetProfile();
+        const report = analyzeFolderOrganization(discoveredAssets);
+        const eligible = report.findings.some((finding) =>
+          finding.kind === "uncategorized-concentration"
+          && finding.workspaceFolderUri === workspaceFolderUri
+          && finding.affectedFolders.length === 1
+          && finding.affectedFolders[0] === folder,
+        );
+        if (!eligible) throw new Error("This folder is no longer eligible for bulk Asset Type assignment. Analyze Organization again.");
+        const targets = selectUncategorizedAssetsInFolder(discoveredAssets, workspaceFolderUri, folder);
+        if (targets.length === 0) throw new Error("No Uncategorized assets remain in this folder.");
+        const updatedCount = await updateWorkspaceAssetTypes(targets, assetType, activeProfile, assetTypeStore);
+        const assets = await scanAndStore(false);
+        await vscode.window.showInformationMessage(`Game Asset Explorer: Assigned ${updatedCount} asset${updatedCount === 1 ? "" : "s"} in ${folder || "Workspace root"} as ${assetType}.`);
+        return assets;
       },
       onSelect: async (identity) => {
         const workspaceAsset = findAsset(identity);

@@ -48,6 +48,7 @@ export interface AssetGridPanelOptions {
   onSearch: (query: string) => WorkspaceAsset[];
   onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
   onCopyOrganizationPrompt: () => Promise<void>;
+  onBulkAssignAssetType: (workspaceFolderUri: string, folder: string, assetType: string) => Promise<WorkspaceAsset[]>;
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
@@ -68,6 +69,7 @@ export class AssetGridPanel {
   private readonly onSearch: (query: string) => WorkspaceAsset[];
   private readonly onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
   private readonly onCopyOrganizationPrompt: () => Promise<void>;
+  private readonly onBulkAssignAssetType: (workspaceFolderUri: string, folder: string, assetType: string) => Promise<WorkspaceAsset[]>;
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
   private readonly onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   private readonly onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
@@ -117,6 +119,7 @@ export class AssetGridPanel {
     this.onSearch = options.onSearch;
     this.onAnalyzeOrganization = options.onAnalyzeOrganization;
     this.onCopyOrganizationPrompt = options.onCopyOrganizationPrompt;
+    this.onBulkAssignAssetType = options.onBulkAssignAssetType;
     this.onSelect = options.onSelect;
     this.onSetAssetType = options.onSetAssetType;
     this.onSetCharacter = options.onSetCharacter;
@@ -173,6 +176,16 @@ export class AssetGridPanel {
           if (!this.disposed) {
             await this.panel.webview.postMessage({ type: "organizationPromptError", message: formatError(error) });
           }
+        }
+        return;
+      }
+
+      if (isBulkAssignAssetTypeMessage(message)) {
+        try {
+          const assets = await this.onBulkAssignAssetType(message.workspaceFolderUri, message.folder, message.assetType);
+          if (!this.disposed) this.update(assets);
+        } catch (error) {
+          if (!this.disposed) await this.panel.webview.postMessage({ type: "organizationBulkAssetTypeError", message: formatError(error) });
         }
         return;
       }
@@ -576,6 +589,9 @@ function getWebviewHtml(
     .organization-reason, .organization-target, .organization-folders { margin-top: 6px; font-size: 0.85em; overflow-wrap: anywhere; }
     .organization-target { font-weight: 600; }
     .organization-assets { margin: 7px 0 0; padding-left: 20px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
+    .organization-bulk { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--vscode-widget-border); display: grid; gap: 7px; }
+    .organization-bulk-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .organization-bulk select { min-width: 160px; }
     .empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--vscode-descriptionForeground); text-align: center; }
     @media (max-width: 900px) { .content { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 14px; } .grid, .character-assets { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); } }
     @media (max-width: 760px) { .content { grid-template-columns: 1fr; } .details { position: static; } }
@@ -722,6 +738,13 @@ function getWebviewHtml(
         return;
       }
 
+      if (message.type === 'organizationBulkAssetTypeError') {
+        const status = document.getElementById('organization-prompt-status');
+        if (status) status.textContent = message.message || 'Unable to assign Asset Type.';
+        document.querySelectorAll('.organization-bulk button, .organization-bulk select').forEach((control) => { control.disabled = false; });
+        return;
+      }
+
       if (message.type === 'assetDetails') {
         renderDetails(message.result);
         return;
@@ -850,6 +873,44 @@ function getWebviewHtml(
             assets.appendChild(more);
           }
           card.appendChild(assets);
+        }
+        if (finding.kind === 'uncategorized-concentration' && Array.isArray(finding.affectedFolders) && finding.affectedFolders.length === 1) {
+          const uncategorizedCount = Array.isArray(finding.affectedAssets) ? finding.affectedAssets.filter((asset) => !asset.assetType).length : 0;
+          if (uncategorizedCount > 0 && Array.isArray(assetProfile.assetTypes) && assetProfile.assetTypes.length > 0) {
+            const bulk = document.createElement('div');
+            bulk.className = 'organization-bulk';
+            const folder = finding.affectedFolders[0] || '';
+            const explanation = document.createElement('div');
+            explanation.className = 'organization-reason';
+            explanation.textContent = 'Metadata fix: assign an Asset Type to ' + uncategorizedCount + ' Uncategorized asset' + (uncategorizedCount === 1 ? '' : 's') + ' in ' + (folder || 'Workspace root') + ' · Workspace: ' + finding.workspaceFolderName + '. Existing typed assets are preserved.';
+            const controls = document.createElement('div');
+            controls.className = 'organization-bulk-controls';
+            const select = document.createElement('select');
+            select.className = 'facet-select';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Choose Asset Type…';
+            select.appendChild(placeholder);
+            assetProfile.assetTypes.forEach((assetType) => {
+              const option = document.createElement('option');
+              option.value = assetType;
+              option.textContent = assetType;
+              select.appendChild(option);
+            });
+            const apply = actionButton('Assign ' + uncategorizedCount + ' assets', false, () => {
+              if (!select.value) return;
+              select.disabled = true;
+              apply.disabled = true;
+              const status = document.getElementById('organization-prompt-status');
+              if (status) status.textContent = 'Assigning ' + uncategorizedCount + ' assets in ' + (folder || 'Workspace root') + ' as ' + select.value + '…';
+              vscode.postMessage({ type: 'bulkAssignAssetType', workspaceFolderUri: finding.workspaceFolderUri, folder, assetType: select.value });
+            });
+            apply.disabled = true;
+            select.addEventListener('change', () => { apply.disabled = !select.value; });
+            controls.append(select, apply);
+            bulk.append(explanation, controls);
+            card.appendChild(bulk);
+          }
         }
         list.appendChild(card);
       });
@@ -1568,6 +1629,14 @@ function createNonce(): string {
 
 function isCopyOrganizationPromptMessage(message: unknown): message is { type: "copyOrganizationPrompt" } {
   return typeof message === "object" && message !== null && "type" in message && message.type === "copyOrganizationPrompt";
+}
+
+function isBulkAssignAssetTypeMessage(message: unknown): message is { type: "bulkAssignAssetType"; workspaceFolderUri: string; folder: string; assetType: string } {
+  return typeof message === "object" && message !== null
+    && "type" in message && message.type === "bulkAssignAssetType"
+    && "workspaceFolderUri" in message && typeof message.workspaceFolderUri === "string" && message.workspaceFolderUri.length <= 2048
+    && "folder" in message && typeof message.folder === "string" && message.folder.length <= 1024
+    && "assetType" in message && typeof message.assetType === "string" && message.assetType.length > 0 && message.assetType.length <= 64;
 }
 
 function isReadyMessage(message: unknown): message is { type: "ready" } {

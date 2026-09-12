@@ -28,6 +28,12 @@ test("builds deterministic organization prompt from findings and explicit metada
   assert.equal(first, second);
   assert.match(first, /Do not invent Asset Type or Character classifications/);
   assert.match(first, /Confidence: high \/ medium \/ low/);
+  assert.match(first, /recommended move count to be zero/);
+  assert.match(first, /Prefer metadata correction over filesystem changes/);
+  assert.ok(first.indexOf("No-change recommendations") < first.indexOf("Metadata improvements"));
+  assert.ok(first.indexOf("Metadata improvements") < first.indexOf("Recommended moves"));
+  assert.ok(first.indexOf("Recommended moves") < first.indexOf("Rejected move ideas"));
+  assert.ok(first.indexOf("Rejected move ideas") < first.indexOf("Tool false positives \/ analyzer improvements"));
   assert.match(first, /Character=Alice/);
   assert.match(first, /Type=Uncategorized/);
 });
@@ -43,5 +49,5 @@ test("handles a no-finding report without inventing advice", () => {
   const assets = [asset("assets/characters/alice.png", { assetType: "Character", character: "Alice" })];
   const prompt = buildOrganizationPrompt(analyzeFolderOrganization(assets), assets);
   assert.match(prompt, /No organization findings were detected/);
-  assert.match(prompt, /Items that should remain unchanged/);
+  assert.match(prompt, /No-change recommendations/);
 });
