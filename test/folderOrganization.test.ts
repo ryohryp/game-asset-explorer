@@ -71,3 +71,35 @@ test("returns no findings for a small well-organized set", () => {
   assert.equal(report.analyzedAssets, 2);
   assert.deepEqual(report.findings, []);
 });
+
+
+test("does not flag peer namespace folders solely because each has one asset", () => {
+  const report = analyzeFolderOrganization([
+    asset("assets/characters/alice/portrait.png"),
+    asset("assets/characters/bob/portrait.png"),
+    asset("assets/characters/carol/portrait.png"),
+  ]);
+  assert.ok(!report.findings.some((item) => item.kind === "one-off-folder"));
+});
+
+test("still flags a suspicious one-off leaf when the peer structure is not a namespace cluster", () => {
+  const report = analyzeFolderOrganization([
+    asset("assets/characters/alice/poses/combat/attack.png"),
+    asset("assets/characters/alice/poses/idle/idle.png"),
+  ]);
+  assert.ok(report.findings.some((item) => item.kind === "one-off-folder"));
+});
+
+test("ignores version-like segments when deciding whether nesting is excessive", () => {
+  const report = analyzeFolderOrganization([
+    asset("assets/characters/alice/v2/portrait.png"),
+  ]);
+  assert.ok(!report.findings.some((item) => item.kind === "deep-nesting"));
+});
+
+test("still detects genuinely deep structure when a version-like layer is present", () => {
+  const report = analyzeFolderOrganization([
+    asset("assets/characters/alice/poses/combat/v2/attack.png"),
+  ]);
+  assert.ok(report.findings.some((item) => item.kind === "deep-nesting"));
+});
