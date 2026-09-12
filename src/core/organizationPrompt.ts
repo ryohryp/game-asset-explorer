@@ -6,6 +6,7 @@ export const ORGANIZATION_PROMPT_ASSET_LIMIT = 200;
 export function buildOrganizationPrompt(
   report: FolderOrganizationReport,
   assets: readonly WorkspaceAsset[],
+  activeAssetTypes: readonly string[] = [],
 ): string {
   const sortedAssets = [...assets].sort((left, right) =>
     left.workspaceFolderName.localeCompare(right.workspaceFolderName)
@@ -42,7 +43,12 @@ export function buildOrganizationPrompt(
     "",
     "Rules:",
     "- Treat the current filesystem as authoritative.",
-    "- Do not invent Asset Type or Character classifications. Use only the explicit metadata shown below.",
+    "- Folder/path names are review evidence only; never treat them as authoritative semantic metadata.",
+    "- Do not infer or recommend a concrete Asset Type unless it appears in the Active Asset Profile supplied below.",
+    "- Do not infer a Character assignment solely from a folder name.",
+    "- Existing explicit Asset Type / Character metadata may be used as evidence, but metadata improvements are suggestions that require explicit user review.",
+    "- Do not invent global folder-to-type mapping rules unless they are supplied as explicit project conventions.",
+    "- No project folder-to-type conventions are supplied in this prompt; do not invent any.",
     "- Minimize file moves and preserve existing conventions when they are already coherent.",
     "- It is valid for the recommended move count to be zero.",
     "- Do not propose a move merely to silence a static-analysis warning.",
@@ -68,6 +74,8 @@ export function buildOrganizationPrompt(
     "4. Rejected move ideas — briefly explain tempting changes that should NOT be made and why.",
     "5. Tool false positives / analyzer improvements — identify findings caused by intentional project conventions.",
     "6. Uncertain items requiring human review.",
+    "",
+    `Active Asset Profile types: ${activeAssetTypes.length > 0 ? activeAssetTypes.join(", ") : "(none supplied; do not recommend concrete Asset Types)"}`,
     "",
     `Organization findings (${report.findings.length} across ${report.analyzedAssets} analyzed assets):`,
     ...findingLines,
