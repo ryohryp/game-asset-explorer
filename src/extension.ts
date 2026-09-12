@@ -294,7 +294,8 @@ export function activate(context: vscode.ExtensionContext): void {
       onAnalyzeOrganization: async () => analyzeFolderOrganization(discoveredAssets),
       onCopyOrganizationPrompt: async () => {
         const report = analyzeFolderOrganization(discoveredAssets);
-        await vscode.env.clipboard.writeText(buildOrganizationPrompt(report, discoveredAssets));
+        activeProfile = getConfiguredAssetProfile();
+        await vscode.env.clipboard.writeText(buildOrganizationPrompt(report, discoveredAssets, activeProfile.assetTypes));
       },
       onBulkAssignAssetType: async (workspaceFolderUri, folder, assetType) => {
         activeProfile = getConfiguredAssetProfile();
