@@ -23,10 +23,16 @@ test("builds deterministic organization prompt from findings and explicit metada
     asset("assets/misc/unknown.png"),
   ];
   const report = analyzeFolderOrganization(assets);
-  const first = buildOrganizationPrompt(report, assets);
-  const second = buildOrganizationPrompt(report, [...assets].reverse());
+  const activeAssetTypes = ["Character", "Icon", "Background"];
+  const first = buildOrganizationPrompt(report, assets, activeAssetTypes);
+  const second = buildOrganizationPrompt(report, [...assets].reverse(), activeAssetTypes);
   assert.equal(first, second);
-  assert.match(first, /Do not invent Asset Type or Character classifications/);
+  assert.match(first, /Folder\/path names are review evidence only/);
+  assert.match(first, /unless it appears in the Active Asset Profile/);
+  assert.match(first, /Do not infer a Character assignment solely from a folder name/);
+  assert.match(first, /metadata improvements are suggestions that require explicit user review/i);
+  assert.match(first, /Do not invent global folder-to-type mapping rules/);
+  assert.match(first, /Active Asset Profile types: Character, Icon, Background/);
   assert.match(first, /Confidence: high \/ medium \/ low/);
   assert.match(first, /recommended move count to be zero/);
   assert.match(first, /Prefer metadata correction over filesystem changes/);
@@ -50,4 +56,12 @@ test("handles a no-finding report without inventing advice", () => {
   const prompt = buildOrganizationPrompt(analyzeFolderOrganization(assets), assets);
   assert.match(prompt, /No organization findings were detected/);
   assert.match(prompt, /No-change recommendations/);
+});
+
+
+test("does not permit concrete Asset Type recommendations when no active profile is supplied", () => {
+  const assets = [asset("assets/characters/alice.png")];
+  const prompt = buildOrganizationPrompt(analyzeFolderOrganization(assets), assets);
+  assert.match(prompt, /Active Asset Profile types: \(none supplied; do not recommend concrete Asset Types\)/);
+  assert.match(prompt, /No project folder-to-type conventions are supplied/);
 });
