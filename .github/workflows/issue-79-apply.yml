@@ -32,3 +32,4 @@ jobs:
           git add -A
           git commit -m "feat: separate metadata hygiene findings" || exit 0
           git push
+# trigger
