@@ -67,6 +67,35 @@ export async function updateWorkspaceAssetType(
   await store.write(selectedAsset.workspaceFolderUri, serializeAssetTypeMetadata(updated));
 }
 
+export async function updateWorkspaceAssetTypes(
+  selectedAssets: readonly WorkspaceAsset[],
+  assetType: string,
+  profile: AssetProfile,
+  store: WorkspaceAssetTypeStore,
+): Promise<number> {
+  const targets = selectedAssets.filter((asset) => !asset.assetType);
+  if (targets.length === 0) {
+    return 0;
+  }
+
+  const workspaceUris = [...new Set(targets.map((asset) => asset.workspaceFolderUri))];
+  if (workspaceUris.length !== 1) {
+    throw new Error("Bulk Asset Type assignment must stay within one workspace.");
+  }
+
+  const workspaceFolderUri = workspaceUris[0];
+  const existingText = await store.read(workspaceFolderUri);
+  let metadata = existingText === undefined
+    ? createEmptyAssetTypeMetadata()
+    : parseAssetTypeMetadata(existingText);
+  const uniquePaths = [...new Set(targets.map((asset) => asset.asset.relativePath))];
+  for (const relativePath of uniquePaths) {
+    metadata = setAssetTypeAssignment(metadata, relativePath, assetType, profile);
+  }
+  await store.write(workspaceFolderUri, serializeAssetTypeMetadata(metadata));
+  return uniquePaths.length;
+}
+
 export async function updateWorkspaceAssetCharacter(
   selectedAsset: WorkspaceAsset,
   character: string | undefined,
