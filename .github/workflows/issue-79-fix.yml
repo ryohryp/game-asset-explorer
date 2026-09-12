@@ -1,0 +1,31 @@
+name: Issue 79 Fix
+on:
+  push:
+    branches: [feat/79-metadata-hygiene]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Apply implementation
+        run: python .github/issue79_apply.py
+      - name: Fix extension wiring
+        run: |
+          python -c "from pathlib import Path; p=Path('src/extension.ts'); s=p.read_text(); s=s.replace('report.findings.some((finding) =>\n          finding.kind === \"uncategorized-concentration\"','report.metadataFindings.some((finding) =>\n          finding.kind === \"uncategorized-assets\"',1); p.write_text(s)"
+      - name: Cleanup helpers
+        run: rm -f .github/issue79_apply.py .github/workflows/issue-79-apply.yml .github/workflows/issue-79-fix.yml
+      - run: npm install
+      - run: npm test
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: separate metadata hygiene findings"
+          git push
