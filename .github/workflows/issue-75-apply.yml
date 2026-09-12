@@ -23,6 +23,8 @@ jobs:
         run: python .github/issue75_backend.py
       - name: Apply UI patch
         run: python .github/issue75_ui.py
+      - name: Adjust prompt expectation
+        run: python .github/issue75_fix_test.py
       - name: Install dependencies
         run: npm install
       - name: Test
