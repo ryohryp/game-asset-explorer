@@ -1,0 +1,36 @@
+name: Issue 75 Apply
+
+on:
+  push:
+    branches:
+      - feat/75-organization-guidance-bulk-types
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/75-organization-guidance-bulk-types
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply backend patch
+        run: python .github/issue75_backend.py
+      - name: Apply UI patch
+        run: python .github/issue75_ui.py
+      - name: Install dependencies
+        run: npm install
+      - name: Test
+        run: npm test
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/extension.ts src/ui/assetGridPanel.ts test/assetTypeWorkspace.test.ts test/bulkAssetTypeAssignment.test.ts test/organizationPrompt.test.ts
+          git commit -m "Improve organization guidance and bulk type assignment (#75)"
+          git push
