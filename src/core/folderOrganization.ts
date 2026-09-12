@@ -4,8 +4,9 @@ export type FolderOrganizationFindingKind =
   | "scattered-character"
   | "mixed-asset-types"
   | "deep-nesting"
-  | "one-off-folder"
-  | "uncategorized-concentration";
+  | "one-off-folder";
+
+export type MetadataHygieneFindingKind = "uncategorized-assets";
 
 export interface FolderOrganizationAssetRef {
   workspaceFolderUri: string;
@@ -26,9 +27,20 @@ export interface FolderOrganizationFinding {
   suggestedTargetFolder?: string;
 }
 
+export interface MetadataHygieneFinding {
+  kind: MetadataHygieneFindingKind;
+  workspaceFolderUri: string;
+  workspaceFolderName: string;
+  title: string;
+  reason: string;
+  affectedFolders: string[];
+  affectedAssets: FolderOrganizationAssetRef[];
+}
+
 export interface FolderOrganizationReport {
   analyzedAssets: number;
   findings: FolderOrganizationFinding[];
+  metadataFindings: MetadataHygieneFinding[];
   thresholds: {
     mixedFolderMinimumAssets: number;
     mixedFolderMinimumPerType: number;
@@ -50,11 +62,13 @@ export const FOLDER_ORGANIZATION_THRESHOLDS = {
 
 export function analyzeFolderOrganization(assets: readonly WorkspaceAsset[]): FolderOrganizationReport {
   const findings: FolderOrganizationFinding[] = [];
+  const metadataFindings: MetadataHygieneFinding[] = [];
   const byWorkspace = groupBy(assets, (asset) => asset.workspaceFolderUri);
 
   for (const workspaceAssets of byWorkspace.values()) {
     if (workspaceAssets.length === 0) continue;
     findings.push(...analyzeWorkspace(workspaceAssets));
+    metadataFindings.push(...analyzeWorkspaceMetadata(workspaceAssets));
   }
 
   findings.sort((left, right) =>
@@ -63,9 +77,15 @@ export function analyzeFolderOrganization(assets: readonly WorkspaceAsset[]): Fo
     || left.title.localeCompare(right.title),
   );
 
+  metadataFindings.sort((left, right) =>
+    left.workspaceFolderName.localeCompare(right.workspaceFolderName)
+    || left.title.localeCompare(right.title),
+  );
+
   return {
     analyzedAssets: assets.length,
     findings,
+    metadataFindings,
     thresholds: { ...FOLDER_ORGANIZATION_THRESHOLDS },
   };
 }
@@ -120,23 +140,6 @@ function analyzeWorkspace(assets: readonly WorkspaceAsset[]): FolderOrganization
       });
     }
 
-    const uncategorized = folderAssets.filter((asset) => !asset.assetType);
-    if (
-      folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumAssets
-      && uncategorized.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumAssets
-      && uncategorized.length / folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumRatio
-    ) {
-      findings.push({
-        kind: "uncategorized-concentration",
-        workspaceFolderUri,
-        workspaceFolderName,
-        title: `${displayFolder(folder)} has many Uncategorized assets`,
-        reason: `${uncategorized.length} of ${folderAssets.length} assets (${Math.round(uncategorized.length / folderAssets.length * 100)}%) have no explicit Asset Type. They remain Uncategorized; no semantic type is inferred.`,
-        affectedFolders: [folder],
-        affectedAssets: uncategorized.map(toAssetRef).sort(compareAssetRef),
-      });
-    }
-
     const depth = folderDepth(folder);
     const effectiveDepth = effectiveFolderDepth(folder);
     if (effectiveDepth >= FOLDER_ORGANIZATION_THRESHOLDS.deepFolderMinimumDepth) {
@@ -170,6 +173,35 @@ function analyzeWorkspace(assets: readonly WorkspaceAsset[]): FolderOrganization
       affectedFolders: [folder],
       affectedAssets: folderAssets.map(toAssetRef),
     });
+  }
+
+  return findings;
+}
+
+function analyzeWorkspaceMetadata(assets: readonly WorkspaceAsset[]): MetadataHygieneFinding[] {
+  const findings: MetadataHygieneFinding[] = [];
+  if (assets.length === 0) return findings;
+  const workspaceFolderUri = assets[0].workspaceFolderUri;
+  const workspaceFolderName = assets[0].workspaceFolderName;
+  const byFolder = groupBy(assets, (asset) => folderOf(asset.asset.relativePath));
+
+  for (const [folder, folderAssets] of byFolder) {
+    const uncategorized = folderAssets.filter((asset) => !asset.assetType);
+    if (
+      folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumAssets
+      && uncategorized.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumAssets
+      && uncategorized.length / folderAssets.length >= FOLDER_ORGANIZATION_THRESHOLDS.uncategorizedMinimumRatio
+    ) {
+      findings.push({
+        kind: "uncategorized-assets",
+        workspaceFolderUri,
+        workspaceFolderName,
+        title: `${displayFolder(folder)} has many Uncategorized assets`,
+        reason: `${uncategorized.length} of ${folderAssets.length} assets (${Math.round(uncategorized.length / folderAssets.length * 100)}%) have no explicit Asset Type. This is a metadata hygiene finding, not a recommendation to move files; no semantic type is inferred.`,
+        affectedFolders: [folder],
+        affectedAssets: uncategorized.map(toAssetRef).sort(compareAssetRef),
+      });
+    }
   }
 
   return findings;
@@ -279,5 +311,5 @@ function isString(value: string | undefined): value is string {
 }
 
 function findingRank(kind: FolderOrganizationFindingKind): number {
-  return ["scattered-character", "mixed-asset-types", "uncategorized-concentration", "deep-nesting", "one-off-folder"].indexOf(kind);
+  return ["scattered-character", "mixed-asset-types", "deep-nesting", "one-off-folder"].indexOf(kind);
 }

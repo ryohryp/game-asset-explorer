@@ -50,16 +50,17 @@ test("flags conservative deep nesting and one-off leaf folders", () => {
   assert.ok(report.findings.some((item) => item.kind === "one-off-folder"));
 });
 
-test("reports Uncategorized concentration without inventing semantic metadata", () => {
+test("reports Uncategorized concentration as metadata hygiene without inventing semantic metadata", () => {
   const report = analyzeFolderOrganization([
     asset("assets/misc/a.png"),
     asset("assets/misc/b.png"),
     asset("assets/misc/c.png"),
     asset("assets/misc/d.png"),
   ]);
-  const finding = report.findings.find((item) => item.kind === "uncategorized-concentration");
+  assert.ok(!report.findings.some((item) => item.kind === "uncategorized-assets" as never));
+  const finding = report.metadataFindings.find((item) => item.kind === "uncategorized-assets");
   assert.ok(finding);
-  assert.equal(finding.suggestedTargetFolder, undefined);
+  assert.match(finding.reason, /metadata hygiene finding, not a recommendation to move files/i);
   assert.match(finding.reason, /no semantic type is inferred/i);
 });
 
@@ -70,6 +71,7 @@ test("returns no findings for a small well-organized set", () => {
   ]);
   assert.equal(report.analyzedAssets, 2);
   assert.deepEqual(report.findings, []);
+  assert.deepEqual(report.metadataFindings, []);
 });
 
 

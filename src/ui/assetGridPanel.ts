@@ -824,97 +824,115 @@ function getWebviewHtml(
       organizationReport.appendChild(header);
 
       const findings = report && Array.isArray(report.findings) ? report.findings : [];
+      const metadataFindings = report && Array.isArray(report.metadataFindings) ? report.metadataFindings : [];
       const summary = document.createElement('div');
       summary.className = 'organization-summary';
       const analyzed = report && Number.isFinite(report.analyzedAssets) ? report.analyzedAssets : 0;
-      summary.textContent = findings.length === 0
-        ? 'No organization findings across ' + analyzed + ' analyzed assets.'
-        : findings.length + ' finding' + (findings.length === 1 ? '' : 's') + ' across ' + analyzed + ' analyzed assets. Read-only: no files or metadata were changed.';
+      summary.textContent = findings.length + ' folder finding' + (findings.length === 1 ? '' : 's')
+        + ' and ' + metadataFindings.length + ' metadata hygiene finding' + (metadataFindings.length === 1 ? '' : 's')
+        + ' across ' + analyzed + ' analyzed assets. Read-only analysis: no files or metadata were changed.';
       organizationReport.appendChild(summary);
       const promptStatus = statusNode('organization-prompt-status');
       organizationReport.appendChild(promptStatus);
-      if (findings.length === 0) return;
 
-      const list = document.createElement('div');
-      list.className = 'organization-findings';
-      findings.forEach((finding) => {
-        const card = document.createElement('article');
-        card.className = 'organization-finding';
-        const title = document.createElement('h3');
-        title.textContent = finding.title || finding.kind || 'Organization finding';
-        const reason = document.createElement('div');
-        reason.className = 'organization-reason';
-        reason.textContent = finding.reason || '';
-        card.append(title, reason);
-        if (Array.isArray(finding.affectedFolders) && finding.affectedFolders.length > 0) {
-          const folders = document.createElement('div');
-          folders.className = 'organization-folders';
-          folders.textContent = 'Folders: ' + finding.affectedFolders.map((folder) => folder || 'Workspace root').join(', ');
-          card.appendChild(folders);
+      const renderFindingSection = (label, items, metadataSection) => {
+        const section = document.createElement('section');
+        const sectionHeading = document.createElement('h3');
+        sectionHeading.textContent = label;
+        section.appendChild(sectionHeading);
+        if (items.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'organization-summary';
+          empty.textContent = metadataSection ? 'No metadata hygiene findings.' : 'No folder organization findings.';
+          section.appendChild(empty);
+          organizationReport.appendChild(section);
+          return;
         }
-        if (finding.suggestedTargetFolder) {
-          const target = document.createElement('div');
-          target.className = 'organization-target';
-          target.textContent = 'Suggested target: ' + finding.suggestedTargetFolder;
-          card.appendChild(target);
-        }
-        if (Array.isArray(finding.affectedAssets) && finding.affectedAssets.length > 0) {
-          const assets = document.createElement('ul');
-          assets.className = 'organization-assets';
-          finding.affectedAssets.slice(0, 12).forEach((asset) => {
-            const item = document.createElement('li');
-            const metadata = [asset.assetType ? 'Type: ' + asset.assetType : 'Uncategorized', asset.character ? 'Character: ' + asset.character : 'Unassigned'];
-            item.textContent = asset.relativePath + ' · ' + metadata.join(' · ');
-            assets.appendChild(item);
-          });
-          if (finding.affectedAssets.length > 12) {
-            const more = document.createElement('li');
-            more.textContent = '+' + (finding.affectedAssets.length - 12) + ' more assets';
-            assets.appendChild(more);
+        const list = document.createElement('div');
+        list.className = 'organization-findings';
+        items.forEach((finding) => {
+          const card = document.createElement('article');
+          card.className = 'organization-finding';
+          const title = document.createElement('h3');
+          title.textContent = finding.title || finding.kind || (metadataSection ? 'Metadata hygiene finding' : 'Organization finding');
+          const reason = document.createElement('div');
+          reason.className = 'organization-reason';
+          reason.textContent = finding.reason || '';
+          card.append(title, reason);
+          if (Array.isArray(finding.affectedFolders) && finding.affectedFolders.length > 0) {
+            const folders = document.createElement('div');
+            folders.className = 'organization-folders';
+            folders.textContent = 'Folders: ' + finding.affectedFolders.map((folder) => folder || 'Workspace root').join(', ');
+            card.appendChild(folders);
           }
-          card.appendChild(assets);
-        }
-        if (finding.kind === 'uncategorized-concentration' && Array.isArray(finding.affectedFolders) && finding.affectedFolders.length === 1) {
-          const uncategorizedCount = Array.isArray(finding.affectedAssets) ? finding.affectedAssets.filter((asset) => !asset.assetType).length : 0;
-          if (uncategorizedCount > 0 && Array.isArray(assetProfile.assetTypes) && assetProfile.assetTypes.length > 0) {
-            const bulk = document.createElement('div');
-            bulk.className = 'organization-bulk';
-            const folder = finding.affectedFolders[0] || '';
-            const explanation = document.createElement('div');
-            explanation.className = 'organization-reason';
-            explanation.textContent = 'Metadata fix: assign an Asset Type to ' + uncategorizedCount + ' Uncategorized asset' + (uncategorizedCount === 1 ? '' : 's') + ' in ' + (folder || 'Workspace root') + ' · Workspace: ' + finding.workspaceFolderName + '. Existing typed assets are preserved.';
-            const controls = document.createElement('div');
-            controls.className = 'organization-bulk-controls';
-            const select = document.createElement('select');
-            select.className = 'facet-select';
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = 'Choose Asset Type…';
-            select.appendChild(placeholder);
-            assetProfile.assetTypes.forEach((assetType) => {
-              const option = document.createElement('option');
-              option.value = assetType;
-              option.textContent = assetType;
-              select.appendChild(option);
+          if (!metadataSection && finding.suggestedTargetFolder) {
+            const target = document.createElement('div');
+            target.className = 'organization-target';
+            target.textContent = 'Suggested target: ' + finding.suggestedTargetFolder;
+            card.appendChild(target);
+          }
+          if (Array.isArray(finding.affectedAssets) && finding.affectedAssets.length > 0) {
+            const assets = document.createElement('ul');
+            assets.className = 'organization-assets';
+            finding.affectedAssets.slice(0, 12).forEach((asset) => {
+              const item = document.createElement('li');
+              const metadata = [asset.assetType ? 'Type: ' + asset.assetType : 'Uncategorized', asset.character ? 'Character: ' + asset.character : 'Unassigned'];
+              item.textContent = asset.relativePath + ' · ' + metadata.join(' · ');
+              assets.appendChild(item);
             });
-            const apply = actionButton('Assign ' + uncategorizedCount + ' assets', false, () => {
-              if (!select.value) return;
-              select.disabled = true;
+            if (finding.affectedAssets.length > 12) {
+              const more = document.createElement('li');
+              more.textContent = '+' + (finding.affectedAssets.length - 12) + ' more assets';
+              assets.appendChild(more);
+            }
+            card.appendChild(assets);
+          }
+          if (metadataSection && finding.kind === 'uncategorized-assets' && Array.isArray(finding.affectedFolders) && finding.affectedFolders.length === 1) {
+            const uncategorizedCount = Array.isArray(finding.affectedAssets) ? finding.affectedAssets.filter((asset) => !asset.assetType).length : 0;
+            if (uncategorizedCount > 0 && Array.isArray(assetProfile.assetTypes) && assetProfile.assetTypes.length > 0) {
+              const bulk = document.createElement('div');
+              bulk.className = 'organization-bulk';
+              const folder = finding.affectedFolders[0] || '';
+              const explanation = document.createElement('div');
+              explanation.className = 'organization-reason';
+              explanation.textContent = 'Metadata fix: assign an Asset Type to ' + uncategorizedCount + ' Uncategorized asset' + (uncategorizedCount === 1 ? '' : 's') + ' in ' + (folder || 'Workspace root') + ' · Workspace: ' + finding.workspaceFolderName + '. Existing typed assets are preserved.';
+              const controls = document.createElement('div');
+              controls.className = 'organization-bulk-controls';
+              const select = document.createElement('select');
+              select.className = 'facet-select';
+              const placeholder = document.createElement('option');
+              placeholder.value = '';
+              placeholder.textContent = 'Choose Asset Type…';
+              select.appendChild(placeholder);
+              assetProfile.assetTypes.forEach((assetType) => {
+                const option = document.createElement('option');
+                option.value = assetType;
+                option.textContent = assetType;
+                select.appendChild(option);
+              });
+              const apply = actionButton('Assign ' + uncategorizedCount + ' assets', false, () => {
+                if (!select.value) return;
+                select.disabled = true;
+                apply.disabled = true;
+                const status = document.getElementById('organization-prompt-status');
+                if (status) status.textContent = 'Assigning ' + uncategorizedCount + ' assets in ' + (folder || 'Workspace root') + ' as ' + select.value + '…';
+                vscode.postMessage({ type: 'bulkAssignAssetType', workspaceFolderUri: finding.workspaceFolderUri, folder, assetType: select.value });
+              });
               apply.disabled = true;
-              const status = document.getElementById('organization-prompt-status');
-              if (status) status.textContent = 'Assigning ' + uncategorizedCount + ' assets in ' + (folder || 'Workspace root') + ' as ' + select.value + '…';
-              vscode.postMessage({ type: 'bulkAssignAssetType', workspaceFolderUri: finding.workspaceFolderUri, folder, assetType: select.value });
-            });
-            apply.disabled = true;
-            select.addEventListener('change', () => { apply.disabled = !select.value; });
-            controls.append(select, apply);
-            bulk.append(explanation, controls);
-            card.appendChild(bulk);
+              select.addEventListener('change', () => { apply.disabled = !select.value; });
+              controls.append(select, apply);
+              bulk.append(explanation, controls);
+              card.appendChild(bulk);
+            }
           }
-        }
-        list.appendChild(card);
-      });
-      organizationReport.appendChild(list);
+          list.appendChild(card);
+        });
+        section.appendChild(list);
+        organizationReport.appendChild(section);
+      };
+
+      renderFindingSection('Folder Organization', findings, false);
+      renderFindingSection('Metadata Hygiene', metadataFindings, true);
       organizationReport.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 

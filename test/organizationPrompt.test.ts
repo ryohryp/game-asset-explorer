@@ -36,6 +36,9 @@ test("builds deterministic organization prompt from findings and explicit metada
   assert.match(first, /Confidence: high \/ medium \/ low/);
   assert.match(first, /recommended move count to be zero/);
   assert.match(first, /Prefer metadata correction over filesystem changes/);
+  assert.match(first, /Metadata Hygiene findings describe missing or inconsistent explicit metadata; they do not imply that files should be moved/);
+  assert.match(first, /Folder Organization findings/);
+  assert.match(first, /Metadata Hygiene findings/);
   assert.ok(first.indexOf("No-change recommendations") < first.indexOf("Metadata improvements"));
   assert.ok(first.indexOf("Metadata improvements") < first.indexOf("Recommended moves"));
   assert.ok(first.indexOf("Recommended moves") < first.indexOf("Rejected move ideas"));
