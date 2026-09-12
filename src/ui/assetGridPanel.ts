@@ -587,6 +587,7 @@ function getWebviewHtml(
     .organization-finding { border: 1px solid var(--vscode-widget-border); border-radius: 4px; padding: 10px; background: var(--vscode-editor-background); }
     .organization-finding h3 { margin: 0 0 6px; font-size: 0.95rem; }
     .organization-reason, .organization-target, .organization-folders { margin-top: 6px; font-size: 0.85em; overflow-wrap: anywhere; }
+    .organization-signal { display: inline-block; margin: 0 0 6px; padding: 2px 6px; border: 1px solid var(--vscode-widget-border); border-radius: 10px; color: var(--vscode-descriptionForeground); font-size: 0.76em; }
     .organization-target { font-weight: 600; }
     .organization-assets { margin: 7px 0 0; padding-left: 20px; color: var(--vscode-descriptionForeground); font-size: 0.82em; }
     .organization-bulk { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--vscode-widget-border); display: grid; gap: 7px; }
@@ -858,7 +859,17 @@ function getWebviewHtml(
           const reason = document.createElement('div');
           reason.className = 'organization-reason';
           reason.textContent = finding.reason || '';
-          card.append(title, reason);
+          card.appendChild(title);
+          if (!metadataSection && (finding.severity || finding.confidence)) {
+            const signal = document.createElement('div');
+            signal.className = 'organization-signal';
+            const parts = [];
+            if (finding.severity) parts.push(finding.severity === 'info' ? 'Info' : finding.severity);
+            if (finding.confidence) parts.push(finding.confidence.charAt(0).toUpperCase() + finding.confidence.slice(1) + ' confidence');
+            signal.textContent = parts.join(' · ');
+            card.appendChild(signal);
+          }
+          card.appendChild(reason);
           if (Array.isArray(finding.affectedFolders) && finding.affectedFolders.length > 0) {
             const folders = document.createElement('div');
             folders.className = 'organization-folders';

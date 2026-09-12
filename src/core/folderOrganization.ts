@@ -8,6 +8,9 @@ export type FolderOrganizationFindingKind =
 
 export type MetadataHygieneFindingKind = "uncategorized-assets";
 
+export type FolderOrganizationFindingConfidence = "low" | "medium" | "high";
+export type FolderOrganizationFindingSeverity = "info" | "warning";
+
 export interface FolderOrganizationAssetRef {
   workspaceFolderUri: string;
   workspaceFolderName: string;
@@ -25,6 +28,8 @@ export interface FolderOrganizationFinding {
   affectedFolders: string[];
   affectedAssets: FolderOrganizationAssetRef[];
   suggestedTargetFolder?: string;
+  confidence?: FolderOrganizationFindingConfidence;
+  severity?: FolderOrganizationFindingSeverity;
 }
 
 export interface MetadataHygieneFinding {
@@ -169,7 +174,9 @@ function analyzeWorkspace(assets: readonly WorkspaceAsset[]): FolderOrganization
       workspaceFolderUri,
       workspaceFolderName,
       title: `${displayFolder(folder)} contains only one asset`,
-      reason: `This leaf folder is ${depth} levels deep, contains one image asset, and has sibling folders. It may add navigation depth without much grouping value.`,
+      reason: `This leaf folder is ${depth} levels deep, contains one image asset, and has sibling folders. It may add navigation depth, but it may also represent an intentional domain boundary. Review project conventions and references before reorganizing it.`,
+      confidence: "low",
+      severity: "info",
       affectedFolders: [folder],
       affectedAssets: folderAssets.map(toAssetRef),
     });

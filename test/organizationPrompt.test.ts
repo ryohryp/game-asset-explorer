@@ -62,6 +62,20 @@ test("handles a no-finding report without inventing advice", () => {
 });
 
 
+test("presents one-off folders as low-confidence review candidates", () => {
+  const assets = [
+    asset("assets/scenes/events/cg.png"),
+    asset("assets/scenes/backgrounds/day.png"),
+    asset("assets/scenes/backgrounds/night.png"),
+  ];
+  const prompt = buildOrganizationPrompt(analyzeFolderOrganization(assets), assets);
+  assert.match(prompt, /Severity: info/);
+  assert.match(prompt, /Confidence: low/);
+  assert.match(prompt, /Treat low-confidence findings as review candidates, not move recommendations/);
+  assert.match(prompt, /intentional domain boundary/i);
+});
+
+
 test("does not permit concrete Asset Type recommendations when no active profile is supplied", () => {
   const assets = [asset("assets/characters/alice.png")];
   const prompt = buildOrganizationPrompt(analyzeFolderOrganization(assets), assets);
