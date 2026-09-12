@@ -47,6 +47,7 @@ export interface AssetGridPanelOptions {
   onRefresh: () => Promise<WorkspaceAsset[]>;
   onSearch: (query: string) => WorkspaceAsset[];
   onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
+  onCopyOrganizationPrompt: () => Promise<void>;
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
@@ -66,6 +67,7 @@ export class AssetGridPanel {
   private readonly onRefresh: () => Promise<WorkspaceAsset[]>;
   private readonly onSearch: (query: string) => WorkspaceAsset[];
   private readonly onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
+  private readonly onCopyOrganizationPrompt: () => Promise<void>;
   private readonly onSelect: (identity: string) => Promise<AssetSelectionResult>;
   private readonly onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   private readonly onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
@@ -114,6 +116,7 @@ export class AssetGridPanel {
     this.onRefresh = options.onRefresh;
     this.onSearch = options.onSearch;
     this.onAnalyzeOrganization = options.onAnalyzeOrganization;
+    this.onCopyOrganizationPrompt = options.onCopyOrganizationPrompt;
     this.onSelect = options.onSelect;
     this.onSetAssetType = options.onSetAssetType;
     this.onSetCharacter = options.onSetCharacter;
@@ -155,6 +158,20 @@ export class AssetGridPanel {
         } catch (error) {
           if (!this.disposed) {
             await this.panel.webview.postMessage({ type: "organizationError", message: formatError(error) });
+          }
+        }
+        return;
+      }
+
+      if (isCopyOrganizationPromptMessage(message)) {
+        try {
+          await this.onCopyOrganizationPrompt();
+          if (!this.disposed) {
+            await this.panel.webview.postMessage({ type: "organizationPromptCopied" });
+          }
+        } catch (error) {
+          if (!this.disposed) {
+            await this.panel.webview.postMessage({ type: "organizationPromptError", message: formatError(error) });
           }
         }
         return;
@@ -689,6 +706,22 @@ function getWebviewHtml(
         return;
       }
 
+      if (message.type === 'organizationPromptCopied') {
+        const button = document.getElementById('copy-organization-prompt');
+        if (button) button.disabled = false;
+        const status = document.getElementById('organization-prompt-status');
+        if (status) status.textContent = 'Organization prompt copied.';
+        return;
+      }
+
+      if (message.type === 'organizationPromptError') {
+        const button = document.getElementById('copy-organization-prompt');
+        if (button) button.disabled = false;
+        const status = document.getElementById('organization-prompt-status');
+        if (status) status.textContent = message.message || 'Unable to copy organization prompt.';
+        return;
+      }
+
       if (message.type === 'assetDetails') {
         renderDetails(message.result);
         return;
@@ -758,8 +791,13 @@ function getWebviewHtml(
       header.className = 'organization-header';
       const heading = document.createElement('h2');
       heading.textContent = 'Folder Organization';
+      const copyPrompt = actionButton('Copy Organization Prompt', true, () => {
+        copyPrompt.disabled = true;
+        vscode.postMessage({ type: 'copyOrganizationPrompt' });
+      });
+      copyPrompt.id = 'copy-organization-prompt';
       const close = actionButton('Close', true, () => { organizationReport.hidden = true; });
-      header.append(heading, close);
+      header.append(heading, copyPrompt, close);
       organizationReport.appendChild(header);
 
       const findings = report && Array.isArray(report.findings) ? report.findings : [];
@@ -770,6 +808,8 @@ function getWebviewHtml(
         ? 'No organization findings across ' + analyzed + ' analyzed assets.'
         : findings.length + ' finding' + (findings.length === 1 ? '' : 's') + ' across ' + analyzed + ' analyzed assets. Read-only: no files or metadata were changed.';
       organizationReport.appendChild(summary);
+      const promptStatus = statusNode('organization-prompt-status');
+      organizationReport.appendChild(promptStatus);
       if (findings.length === 0) return;
 
       const list = document.createElement('div');
@@ -1524,6 +1564,10 @@ function createNonce(): string {
     nonce += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   return nonce;
+}
+
+function isCopyOrganizationPromptMessage(message: unknown): message is { type: "copyOrganizationPrompt" } {
+  return typeof message === "object" && message !== null && "type" in message && message.type === "copyOrganizationPrompt";
 }
 
 function isReadyMessage(message: unknown): message is { type: "ready" } {
