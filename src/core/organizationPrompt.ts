@@ -1,4 +1,5 @@
 import type { FolderOrganizationReport } from "./folderOrganization";
+import { deriveOrganizationNextActions } from "./organizationNextActions";
 import type { WorkspaceAsset } from "../workspaceAsset";
 
 export const ORGANIZATION_PROMPT_ASSET_LIMIT = 200;
@@ -14,6 +15,7 @@ export function buildOrganizationPrompt(
   );
   const includedAssets = sortedAssets.slice(0, ORGANIZATION_PROMPT_ASSET_LIMIT);
   const omittedCount = Math.max(0, sortedAssets.length - includedAssets.length);
+  const nextActions = deriveOrganizationNextActions(report);
 
   const findingLines = report.findings.length === 0
     ? ["- No organization findings were detected by the current bounded rules."]
@@ -38,6 +40,16 @@ export function buildOrganizationPrompt(
       `   Folders: ${finding.affectedFolders.map((folder) => folder || "Workspace root").join(", ")}`,
       `   Affected assets: ${finding.affectedAssets.length}`,
     ]);
+
+  const supportedActionLines = nextActions.actionable.length === 0
+    ? ["- No deterministic bulk Asset Type action is available from the current report."]
+    : nextActions.actionable.map((action) => {
+      const folder = action.folder || "Workspace root";
+      if (activeAssetTypes.length === 0) {
+        return `- [${action.workspaceFolderName}] ${folder}: ${action.assetCount} Uncategorized assets are eligible for the existing bulk Asset Type workflow, but no Active Asset Profile types were supplied. Do not name a concrete Asset Type; mark this as Human review required.`;
+      }
+      return `- [${action.workspaceFolderName}] ${folder}: ${action.assetCount} Uncategorized assets can use the existing bulk Asset Type workflow: run Analyze Organization -> Recommended next actions -> select the Asset Type you recommend from the Active Asset Profile -> click Assign ${action.assetCount} assets -> re-run Analyze Organization to verify the finding is resolved. This bulk action changes Asset Type only; Character metadata remains unchanged.`;
+    });
 
   const assetLines = includedAssets.map((asset) => {
     const metadata = [
@@ -75,6 +87,12 @@ export function buildOrganizationPrompt(
     "- Project documentation presence is contextual evidence, not authoritative semantic metadata; inspect it before recommending reorganization.",
     "- Do not assume references can be updated safely; call out when reference updates may be required.",
     "- Do not rename assets unless there is a concrete reason.",
+    "- Finish the review with a section titled exactly `Next actions in Game Asset Explorer`.",
+    "- In that final section, translate accepted recommendations into concrete steps using only the Supported Game Asset Explorer actions listed below.",
+    "- Never invent buttons, commands, automatic moves, or metadata operations that are not listed as supported actions.",
+    "- If a recommendation has no supported in-product action, write `Human review required` and explain what decision remains.",
+    "- If an item should remain unchanged, write `No in-product action required` for that item.",
+    "- Keep every mutation explicit and user-triggered.",
     "",
     "For every proposed move, include:",
     "1. Current path",
@@ -91,8 +109,13 @@ export function buildOrganizationPrompt(
     "4. Rejected move ideas — briefly explain tempting changes that should NOT be made and why.",
     "5. Tool false positives / analyzer improvements — identify findings caused by intentional project conventions.",
     "6. Uncertain items requiring human review.",
+    "7. Next actions in Game Asset Explorer — give exact supported in-product steps for accepted recommendations, then the verification step.",
     "",
     `Active Asset Profile types: ${activeAssetTypes.length > 0 ? activeAssetTypes.join(", ") : "(none supplied; do not recommend concrete Asset Types)"}`,
+    "",
+    "Supported Game Asset Explorer actions for this report:",
+    ...supportedActionLines,
+    ...(nextActions.humanReviewCount > 0 ? [`- ${nextActions.humanReviewCount} finding${nextActions.humanReviewCount === 1 ? "" : "s"} have no deterministic mutation action in this workflow; use Human review required or No in-product action required as appropriate.`] : []),
     "",
     `Folder Organization findings (${report.findings.length} across ${report.analyzedAssets} analyzed assets):`,
     ...findingLines,
