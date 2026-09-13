@@ -10,6 +10,7 @@ export type MetadataHygieneFindingKind = "uncategorized-assets";
 
 export type FolderOrganizationFindingConfidence = "low" | "medium" | "high";
 export type FolderOrganizationFindingSeverity = "info" | "warning";
+export type FolderOrganizationIntentEvidence = "readme";
 
 export interface FolderOrganizationAssetRef {
   workspaceFolderUri: string;
@@ -30,6 +31,7 @@ export interface FolderOrganizationFinding {
   suggestedTargetFolder?: string;
   confidence?: FolderOrganizationFindingConfidence;
   severity?: FolderOrganizationFindingSeverity;
+  intentEvidence?: FolderOrganizationIntentEvidence[];
 }
 
 export interface MetadataHygieneFinding {
