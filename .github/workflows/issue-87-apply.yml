@@ -1,0 +1,37 @@
+name: Issue 87 Apply
+
+on:
+  push:
+    branches:
+      - feat/87-organization-next-actions
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/87-organization-next-actions
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply implementation
+        run: python .github/scripts/issue87.py
+      - name: Install dependencies
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Cleanup helper files
+        run: rm .github/scripts/issue87.py .github/workflows/issue-87-apply.yml
+      - name: Commit implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "feat: make organization next actions explicit"
+          git push
