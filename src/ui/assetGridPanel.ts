@@ -870,6 +870,12 @@ function getWebviewHtml(
             card.appendChild(signal);
           }
           card.appendChild(reason);
+          if (!metadataSection && Array.isArray(finding.intentEvidence) && finding.intentEvidence.includes('readme')) {
+            const evidence = document.createElement('div');
+            evidence.className = 'organization-reason';
+            evidence.textContent = 'Intent evidence: README present';
+            card.appendChild(evidence);
+          }
           if (Array.isArray(finding.affectedFolders) && finding.affectedFolders.length > 0) {
             const folders = document.createElement('div');
             folders.className = 'organization-folders';

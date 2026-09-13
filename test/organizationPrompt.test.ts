@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { attachFolderIntentEvidence } from "../src/core/folderIntentEvidence";
 import { analyzeFolderOrganization } from "../src/core/folderOrganization";
 import { buildOrganizationPrompt, ORGANIZATION_PROMPT_ASSET_LIMIT } from "../src/core/organizationPrompt";
 import type { WorkspaceAsset } from "../src/workspaceAsset";
@@ -81,4 +82,21 @@ test("does not permit concrete Asset Type recommendations when no active profile
   const prompt = buildOrganizationPrompt(analyzeFolderOrganization(assets), assets);
   assert.match(prompt, /Active Asset Profile types: \(none supplied; do not recommend concrete Asset Types\)/);
   assert.match(prompt, /No project folder-to-type conventions are supplied/);
+});
+
+
+test("includes folder intent evidence as contextual, non-authoritative evidence", () => {
+  const assets = [
+    asset("assets/visual/events/cg.png"),
+    asset("assets/visual/misc/other.png"),
+  ];
+  const base = analyzeFolderOrganization(assets);
+  const report = attachFolderIntentEvidence(base, [{
+    workspaceFolderUri: "file:///Game",
+    folder: "assets/visual/events",
+    evidence: ["readme"],
+  }]);
+  const prompt = buildOrganizationPrompt(report, assets);
+  assert.match(prompt, /Intent evidence: README present in affected folder/);
+  assert.match(prompt, /Project documentation presence is contextual evidence, not authoritative semantic metadata/);
 });

@@ -6,6 +6,7 @@ import { loadAssetDetails } from "./core/assetDetails";
 import { selectUncategorizedAssetsInFolder } from "./core/bulkAssetTypeAssignment";
 import { analyzeFolderOrganization } from "./core/folderOrganization";
 import { buildOrganizationPrompt } from "./core/organizationPrompt";
+import { enrichOrganizationReportWithFolderIntent } from "./organizationIntentWorkspace";
 import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
@@ -291,9 +292,9 @@ export function activate(context: vscode.ExtensionContext): void {
       assetProfile: activeProfile,
       onRefresh: () => scanAndStore(false),
       onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
-      onAnalyzeOrganization: async () => analyzeFolderOrganization(discoveredAssets),
+      onAnalyzeOrganization: async () => enrichOrganizationReportWithFolderIntent(analyzeFolderOrganization(discoveredAssets)),
       onCopyOrganizationPrompt: async () => {
-        const report = analyzeFolderOrganization(discoveredAssets);
+        const report = await enrichOrganizationReportWithFolderIntent(analyzeFolderOrganization(discoveredAssets));
         activeProfile = getConfiguredAssetProfile();
         await vscode.env.clipboard.writeText(buildOrganizationPrompt(report, discoveredAssets, activeProfile.assetTypes));
       },
