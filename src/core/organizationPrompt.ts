@@ -60,6 +60,7 @@ export function buildOrganizationPrompt(
     "- Do not infer or recommend a concrete Asset Type unless it appears in the Active Asset Profile supplied below.",
     "- Do not infer a Character assignment solely from a folder name.",
     "- Existing explicit Asset Type / Character metadata may be used as evidence, but metadata improvements are suggestions that require explicit user review.",
+    "- `Uncategorized` means no explicit Asset Type is assigned, and `Unassigned` means no explicit Character is assigned. These are display states, not literal metadata values to persist; if no Character assignment is appropriate, leave Character unset.",
     "- Do not invent global folder-to-type mapping rules unless they are supplied as explicit project conventions.",
     "- No project folder-to-type conventions are supplied in this prompt; do not invent any.",
     "- Minimize file moves and preserve existing conventions when they are already coherent.",
