@@ -84,12 +84,17 @@ test("does not flag peer namespace folders solely because each has one asset", (
   assert.ok(!report.findings.some((item) => item.kind === "one-off-folder"));
 });
 
-test("still flags a suspicious one-off leaf when the peer structure is not a namespace cluster", () => {
+test("marks a suspicious one-off leaf as a low-confidence informational review candidate", () => {
   const report = analyzeFolderOrganization([
     asset("assets/characters/alice/poses/combat/attack.png"),
     asset("assets/characters/alice/poses/idle/idle.png"),
   ]);
-  assert.ok(report.findings.some((item) => item.kind === "one-off-folder"));
+  const finding = report.findings.find((item) => item.kind === "one-off-folder");
+  assert.ok(finding);
+  assert.equal(finding.confidence, "low");
+  assert.equal(finding.severity, "info");
+  assert.match(finding.reason, /intentional domain boundary/i);
+  assert.match(finding.reason, /review project conventions and references before reorganizing/i);
 });
 
 test("ignores version-like segments when deciding whether nesting is excessive", () => {
