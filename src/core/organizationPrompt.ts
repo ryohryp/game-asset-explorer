@@ -42,7 +42,7 @@ export function buildOrganizationPrompt(
     ]);
 
   const supportedActionLines = nextActions.actionable.length === 0
-    ? ["- No deterministic bulk Asset Type action is available from the current report."]
+    ? ["- No supported Game Asset Explorer mutation action is available from the current report."]
     : nextActions.actionable.map((action) => {
       const folder = action.folder || "Workspace root";
       if (activeAssetTypes.length === 0) {
@@ -89,9 +89,14 @@ export function buildOrganizationPrompt(
     "- Do not rename assets unless there is a concrete reason.",
     "- Finish the review with a section titled exactly `Next actions in Game Asset Explorer`.",
     "- In that final section, translate accepted recommendations into concrete steps using only the Supported Game Asset Explorer actions listed below.",
+    "- The final `Next actions in Game Asset Explorer` section may reference only Folder Organization findings supplied below, Metadata Hygiene findings supplied below, and Supported Game Asset Explorer actions listed below.",
+    "- The Asset summary is review evidence only; never promote an asset-summary-only observation into a next action unless a corresponding supplied finding or supported action exists.",
     "- Never invent buttons, commands, automatic moves, or metadata operations that are not listed as supported actions.",
+    "- Do not add external development commands or workflows to or after the final section, including `npm test`, shell commands, CI steps, project-specific tests, code edits, or manual filesystem operations.",
+    "- Do not append a generic verification or checklist section after `Next actions in Game Asset Explorer`; for a supported bulk Asset Type action, the in-product verification step is only to re-run Analyze Organization as listed below.",
     "- If a recommendation has no supported in-product action, write `Human review required` and explain what decision remains.",
     "- If an item should remain unchanged, write `No in-product action required` for that item.",
+    "- If no supported Game Asset Explorer mutation action is available, explicitly state `No Game Asset Explorer action is currently available.` after classifying the supplied findings.",
     "- Keep every mutation explicit and user-triggered.",
     "",
     "For every proposed move, include:",
@@ -109,7 +114,7 @@ export function buildOrganizationPrompt(
     "4. Rejected move ideas — briefly explain tempting changes that should NOT be made and why.",
     "5. Tool false positives / analyzer improvements — identify findings caused by intentional project conventions.",
     "6. Uncertain items requiring human review.",
-    "7. Next actions in Game Asset Explorer — give exact supported in-product steps for accepted recommendations, then the verification step.",
+    "7. Next actions in Game Asset Explorer — map only supplied findings to exact supported in-product steps; do not add actions from the asset summary alone or external development steps.",
     "",
     `Active Asset Profile types: ${activeAssetTypes.length > 0 ? activeAssetTypes.join(", ") : "(none supplied; do not recommend concrete Asset Types)"}`,
     "",
