@@ -27,18 +27,22 @@ const packageJson = JSON.parse(
   };
 };
 
+const packageNls = JSON.parse(
+  readFileSync(path.resolve(process.cwd(), "package.nls.json"), "utf-8"),
+) as Record<string, string>;
+
 test("contributes a visible Game Asset Explorer Activity Bar view", () => {
   const contributes = packageJson.contributes;
   assert.ok(contributes);
 
   const container = contributes.viewsContainers?.activitybar?.find((item) => item.id === "gameAssetExplorer");
   assert.ok(container);
-  assert.equal(container.title, "Game Asset Explorer");
+  assert.equal(resolveContributionText(container.title), "Game Asset Explorer");
   assert.equal(container.icon, "media/asset-explorer.svg");
 
   const view = contributes.views?.gameAssetExplorer?.find((item) => item.id === "gameAssetExplorer.explorer");
   assert.ok(view);
-  assert.equal(view.name, "Assets");
+  assert.equal(resolveContributionText(view.name), "Assets");
 });
 
 test("keeps existing commands and adds guided asset-directory configuration", () => {
@@ -56,13 +60,13 @@ test("provides actionable first-run and configured welcome states", () => {
     welcome.view === "gameAssetExplorer.explorer"
     && welcome.when?.includes("!gameAssetExplorer.hasUsableAssetDirectories")
   ));
-  assert.ok(unconfigured?.contents?.includes("[Configure Asset Directories]"));
+  assert.ok(resolveContributionText(unconfigured?.contents).includes("[Configure Asset Directories]"));
 
   const configured = welcomes.find((welcome) => (
     welcome.view === "gameAssetExplorer.explorer"
     && welcome.when === "gameAssetExplorer.hasUsableAssetDirectories"
   ));
-  assert.ok(configured?.contents?.includes("[Open Asset Grid]"));
+  assert.ok(resolveContributionText(configured?.contents).includes("[Open Asset Grid]"));
 
   const titleCommands = packageJson.contributes?.menus?.["view/title"] ?? [];
   assert.ok(titleCommands.some((entry) => entry.command === "gameAssetExplorer.openAssetGrid"));
@@ -82,3 +86,16 @@ test("contributes workspace Asset Profile and bounded Custom type settings", () 
   assert.equal(customTypes.scope, "window");
   assert.equal(customTypes.maxItems, 32);
 });
+
+function resolveContributionText(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  const match = /^%(.+)%$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  return packageNls[match[1]] ?? value;
+}
