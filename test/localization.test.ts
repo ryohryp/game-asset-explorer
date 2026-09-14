@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { localizeAssetGridHtml } from "../src/ui/assetGridHtmlLocalization";
 import {
   ASSET_GRID_LOCALIZATION_MESSAGES,
   createAssetGridUiStrings,
@@ -19,6 +20,50 @@ test("builds localized UI labels without changing unknown project values", () =>
   assert.equal(localizeCharacterLabel("Alice", strings), "Alice");
   assert.equal(localizeProfileLabel("Visual Novel", strings), "ja:Visual Novel");
   assert.equal(localizeProfileLabel("Project Profile", strings), "Project Profile");
+});
+
+test("localizes Asset Grid presentation while preserving internal values", () => {
+  const translations: Record<string, string> = {
+    "Refresh": "更新",
+    "Asset Type": "アセット種類",
+    "Profile": "プロファイル",
+    "Generic": "汎用",
+    "Character": "キャラクター",
+    "Unassigned": "未割り当て",
+    "Uncategorized": "未分類",
+    "Preview unavailable": "プレビューできません",
+  };
+  const strings = createAssetGridUiStrings((message) => translations[message] ?? message);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<body>
+<button id="refresh">Refresh</button>
+<span class="profile-status">Profile: Generic</span>
+<label class="facet-label">Asset Type<select><option value="Character">Character (1)</option></select></label>
+<article data-character="Unassigned">
+  <div class="asset-type">Character</div>
+  <div class="character-name">Character: Unassigned</div>
+  <div class="broken">Preview unavailable</div>
+</article>
+<script>
+const vscode = acquireVsCodeApi();
+const assetProfile = {"label":"Generic","assetTypes":["Character"]};
+option.textContent = assetType;
+</script>
+</body>
+</html>`;
+
+  const localized = localizeAssetGridHtml(html, strings, "ja");
+
+  assert.match(localized, /<html lang="ja">/);
+  assert.match(localized, />更新<\/button>/);
+  assert.match(localized, /プロファイル: 汎用/);
+  assert.match(localized, /<option value="Character">キャラクター \(1\)<\/option>/);
+  assert.match(localized, /data-character="Unassigned"/);
+  assert.match(localized, /<div class="asset-type">キャラクター<\/div>/);
+  assert.match(localized, /<div class="character-name">キャラクター: 未割り当て<\/div>/);
+  assert.match(localized, /"assetTypes":\["Character"\]/);
+  assert.match(localized, /option\.textContent = localizeAssetType\(assetType\);/);
 });
 
 test("Japanese package catalog covers every English contribution key", () => {
