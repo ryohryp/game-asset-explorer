@@ -6,6 +6,7 @@ import test from "node:test";
 const packageJson = JSON.parse(
   readFileSync(path.resolve(process.cwd(), "package.json"), "utf-8"),
 ) as {
+  main?: string;
   contributes?: {
     commands?: Array<{ command?: string }>;
     viewsContainers?: {
@@ -50,10 +51,23 @@ test("keeps existing commands and adds guided asset-directory configuration", ()
 
   assert.ok(commandIds.has("gameAssetExplorer.scanAssets"));
   assert.ok(commandIds.has("gameAssetExplorer.openAssetGrid"));
+  assert.ok(commandIds.has("gameAssetExplorer.generateNewAssetPrompt"));
   assert.ok(commandIds.has("gameAssetExplorer.setOpenAiApiKey"));
   assert.ok(commandIds.has("gameAssetExplorer.configureAssetDirectories"));
   assert.ok(commandIds.has("gameAssetExplorer.showCategorySummary"));
   assert.ok(commandIds.has("gameAssetExplorer.setAssetSubtype"));
+});
+
+test("registers Generate New Asset through the extension entry point and Asset Explorer title", () => {
+  assert.equal(packageJson.main, "./dist/src/entry.js");
+  const titleCommands = packageJson.contributes?.menus?.["view/title"] ?? [];
+  const generate = titleCommands.find((entry) => entry.command === "gameAssetExplorer.generateNewAssetPrompt");
+  assert.ok(generate);
+  assert.match(generate.when ?? "", /gameAssetExplorer\.hasUsableAssetDirectories/);
+  assert.equal(
+    packageNls["gameAssetExplorer.command.generateNewAssetPrompt"],
+    "Game Asset Explorer: Generate New Asset Prompt",
+  );
 });
 
 test("provides actionable first-run and configured welcome states", () => {

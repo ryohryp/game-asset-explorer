@@ -10,7 +10,7 @@
   "categories": [
     "Other"
   ],
-  "main": "./dist/src/extension.js",
+  "main": "./dist/src/entry.js",
   "l10n": "./l10n",
   "contributes": {
     "commands": [
@@ -23,6 +23,11 @@
         "command": "gameAssetExplorer.openAssetGrid",
         "title": "%gameAssetExplorer.command.openAssetGrid%",
         "icon": "$(preview)"
+      },
+      {
+        "command": "gameAssetExplorer.generateNewAssetPrompt",
+        "title": "%gameAssetExplorer.command.generateNewAssetPrompt%",
+        "icon": "$(sparkle)"
       },
       {
         "command": "gameAssetExplorer.showCategorySummary",
@@ -90,14 +95,19 @@
           "group": "navigation@2"
         },
         {
-          "command": "gameAssetExplorer.configureAssetDirectories",
-          "when": "view == gameAssetExplorer.explorer",
-          "group": "navigation@4"
+          "command": "gameAssetExplorer.generateNewAssetPrompt",
+          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
+          "group": "navigation@3"
         },
         {
           "command": "gameAssetExplorer.showCategorySummary",
           "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
-          "group": "navigation@3"
+          "group": "navigation@4"
+        },
+        {
+          "command": "gameAssetExplorer.configureAssetDirectories",
+          "when": "view == gameAssetExplorer.explorer",
+          "group": "navigation@5"
         }
       ]
     },
