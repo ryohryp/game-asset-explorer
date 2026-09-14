@@ -87,3 +87,19 @@ test("Japanese runtime bundle covers the Asset Grid localization contract", () =
 function readJson(relativePath: string): Record<string, string> {
   return JSON.parse(readFileSync(relativePath, "utf8")) as Record<string, string>;
 }
+
+test("Japanese catalogs cover category schema contribution and runtime UI", () => {
+  const packageJa = readJson("package.nls.ja.json");
+  const runtimeJa = readJson("l10n/bundle.l10n.ja.json");
+
+  assert.equal(
+    packageJa["gameAssetExplorer.command.showCategorySummary"],
+    "Game Asset Explorer: アセットカテゴリを表示",
+  );
+  assert.equal(
+    packageJa["gameAssetExplorer.command.setAssetSubtype"],
+    "Game Asset Explorer: 選択アセットのサブタイプを設定",
+  );
+  assert.equal(runtimeJa["Subtype unset"], "サブタイプ未設定");
+  assert.equal(runtimeJa["Set subtype to {0}."], "サブタイプを {0} に設定しました。");
+});

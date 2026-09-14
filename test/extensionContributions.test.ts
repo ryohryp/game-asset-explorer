@@ -52,6 +52,8 @@ test("keeps existing commands and adds guided asset-directory configuration", ()
   assert.ok(commandIds.has("gameAssetExplorer.openAssetGrid"));
   assert.ok(commandIds.has("gameAssetExplorer.setOpenAiApiKey"));
   assert.ok(commandIds.has("gameAssetExplorer.configureAssetDirectories"));
+  assert.ok(commandIds.has("gameAssetExplorer.showCategorySummary"));
+  assert.ok(commandIds.has("gameAssetExplorer.setAssetSubtype"));
 });
 
 test("provides actionable first-run and configured welcome states", () => {
@@ -85,6 +87,10 @@ test("contributes workspace Asset Profile and bounded Custom type settings", () 
   assert.ok(customTypes);
   assert.equal(customTypes.scope, "window");
   assert.equal(customTypes.maxItems, 32);
+
+  const overrides = properties["gameAssetExplorer.assetProfileOverrides"];
+  assert.ok(overrides);
+  assert.equal(overrides.scope, "window");
 });
 
 function resolveContributionText(value: string | undefined): string {

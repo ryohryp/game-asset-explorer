@@ -3,6 +3,7 @@ import test from "node:test";
 import { resolveAssetProfile } from "../src/core/assetProfiles";
 import {
   loadWorkspaceAssetTypes,
+  updateWorkspaceAssetSubtype,
   updateWorkspaceAssetType,
   updateWorkspaceAssetTypes,
   type WorkspaceAssetTypeStore,
@@ -41,10 +42,14 @@ test("loads only active-profile assignments and keeps workspaces isolated", asyn
         "assets/hero.png": "Character",
         "assets/card.png": "Card",
       },
+      subtypes: {
+        "assets/hero.png": "attack",
+      },
     }),
     "file:///game-b": JSON.stringify({
       schemaVersion: 1,
       assignments: { "assets/hero.png": "Enemy" },
+      subtypes: { "assets/hero.png": "damage" },
     }),
   });
 
@@ -55,6 +60,7 @@ test("loads only active-profile assignments and keeps workspaces isolated", asyn
   ], resolveAssetProfile("rpg"), store);
 
   assert.deepEqual(loaded.map((item) => item.assetType), ["Character", undefined, "Enemy"]);
+  assert.deepEqual(loaded.map((item) => item.assetSubtype), ["attack", undefined, "damage"]);
 });
 
 test("writes a Git-friendly assignment and clears it back to Uncategorized", async () => {
@@ -69,6 +75,20 @@ test("writes a Git-friendly assignment and clears it back to Uncategorized", asy
   assert.doesNotMatch(store.values["file:///game"], /assets\/hero\.png/);
 });
 
+test("writes and clears optional subtype metadata through the same project file", async () => {
+  const store = memoryStore();
+  const selected = asset("file:///game", "assets/hero.png");
+  const profile = resolveAssetProfile("rpg");
+
+  await updateWorkspaceAssetType(selected, "Character", profile, store);
+  await updateWorkspaceAssetSubtype(selected, "attack", profile, store);
+  assert.match(store.values["file:///game"], /"subtypes"/);
+  assert.match(store.values["file:///game"], /"assets\/hero.png": "attack"/);
+
+  await updateWorkspaceAssetSubtype(selected, undefined, profile, store);
+  assert.doesNotMatch(store.values["file:///game"], /"subtypes"/);
+  assert.match(store.values["file:///game"], /"assets\/hero.png": "Character"/);
+});
 
 test("bulk type assignment updates only provided Uncategorized assets and preserves other assignments", async () => {
   const store = memoryStore({

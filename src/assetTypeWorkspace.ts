@@ -1,10 +1,12 @@
 import {
   createEmptyAssetTypeMetadata,
   getAssetCharacterAssignment,
+  getAssetSubtypeAssignment,
   getAssetTypeAssignment,
   parseAssetTypeMetadata,
   serializeAssetTypeMetadata,
   setAssetCharacterAssignment,
+  setAssetSubtypeAssignment,
   setAssetTypeAssignment,
 } from "./core/assetTypeMetadata";
 import { type AssetProfile } from "./core/assetProfiles";
@@ -40,6 +42,9 @@ export async function loadWorkspaceAssetTypes(
     const assetType = metadata
       ? getAssetTypeAssignment(metadata, workspaceAsset.asset.relativePath, profile)
       : undefined;
+    const assetSubtype = metadata
+      ? getAssetSubtypeAssignment(metadata, workspaceAsset.asset.relativePath, profile)
+      : undefined;
     const character = metadata
       ? getAssetCharacterAssignment(metadata, workspaceAsset.asset.relativePath)
       : undefined;
@@ -48,6 +53,7 @@ export async function loadWorkspaceAssetTypes(
       workspaceFolderName: workspaceAsset.workspaceFolderName,
       asset: workspaceAsset.asset,
       ...(assetType ? { assetType } : {}),
+      ...(assetSubtype ? { assetSubtype } : {}),
       ...(character ? { character } : {}),
     };
   });
@@ -64,6 +70,20 @@ export async function updateWorkspaceAssetType(
     ? createEmptyAssetTypeMetadata()
     : parseAssetTypeMetadata(existingText);
   const updated = setAssetTypeAssignment(metadata, selectedAsset.asset.relativePath, assetType, profile);
+  await store.write(selectedAsset.workspaceFolderUri, serializeAssetTypeMetadata(updated));
+}
+
+export async function updateWorkspaceAssetSubtype(
+  selectedAsset: WorkspaceAsset,
+  assetSubtype: string | undefined,
+  profile: AssetProfile,
+  store: WorkspaceAssetTypeStore,
+): Promise<void> {
+  const existingText = await store.read(selectedAsset.workspaceFolderUri);
+  const metadata = existingText === undefined
+    ? createEmptyAssetTypeMetadata()
+    : parseAssetTypeMetadata(existingText);
+  const updated = setAssetSubtypeAssignment(metadata, selectedAsset.asset.relativePath, assetSubtype, profile);
   await store.write(selectedAsset.workspaceFolderUri, serializeAssetTypeMetadata(updated));
 }
 

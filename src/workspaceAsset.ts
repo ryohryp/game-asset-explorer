@@ -6,6 +6,7 @@ export interface WorkspaceAsset {
   workspaceFolderName: string;
   asset: AssetRecord;
   assetType?: string;
+  assetSubtype?: string;
   character?: string;
 }
 

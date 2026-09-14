@@ -25,6 +25,15 @@
         "icon": "$(preview)"
       },
       {
+        "command": "gameAssetExplorer.showCategorySummary",
+        "title": "%gameAssetExplorer.command.showCategorySummary%",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "gameAssetExplorer.setAssetSubtype",
+        "title": "%gameAssetExplorer.command.setAssetSubtype%"
+      },
+      {
         "command": "gameAssetExplorer.configureAssetDirectories",
         "title": "%gameAssetExplorer.command.configureAssetDirectories%",
         "icon": "$(folder-opened)"
@@ -83,6 +92,11 @@
         {
           "command": "gameAssetExplorer.configureAssetDirectories",
           "when": "view == gameAssetExplorer.explorer",
+          "group": "navigation@4"
+        },
+        {
+          "command": "gameAssetExplorer.showCategorySummary",
+          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
           "group": "navigation@3"
         }
       ]
@@ -133,6 +147,51 @@
           "default": [],
           "scope": "window",
           "description": "%gameAssetExplorer.configuration.customAssetTypes.description%"
+        },
+        "gameAssetExplorer.assetProfileOverrides": {
+          "type": "object",
+          "default": {},
+          "scope": "window",
+          "additionalProperties": false,
+          "properties": {
+            "addAssetTypes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "default": []
+            },
+            "removeAssetTypes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "default": []
+            },
+            "subtypes": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "maxItems": 32,
+                "uniqueItems": true
+              }
+            }
+          },
+          "description": "%gameAssetExplorer.configuration.assetProfileOverrides.description%"
         }
       }
     }

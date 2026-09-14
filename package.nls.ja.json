@@ -9,7 +9,7 @@
   "gameAssetExplorer.view.assets": "アセット",
   "gameAssetExplorer.welcome.noWorkspace": "画像アセットを確認するにはゲームプロジェクトのフォルダーを開いてください。\n[フォルダーを開く](command:workbench.action.files.openFolder)",
   "gameAssetExplorer.welcome.configureDirectories": "ゲーム画像が入っているフォルダーを選択してください。\n[アセットフォルダーを設定](command:gameAssetExplorer.configureAssetDirectories)",
-  "gameAssetExplorer.welcome.ready": "設定済みのゲーム画像アセットを確認できます。\n[アセットグリッドを開く](command:gameAssetExplorer.openAssetGrid)\n[アセットフォルダーを設定](command:gameAssetExplorer.configureAssetDirectories)",
+  "gameAssetExplorer.welcome.ready": "設定済みのゲーム画像アセットを確認できます。\n[アセットグリッドを開く](command:gameAssetExplorer.openAssetGrid)\n[アセットカテゴリを表示](command:gameAssetExplorer.showCategorySummary)\n[アセットフォルダーを設定](command:gameAssetExplorer.configureAssetDirectories)",
   "gameAssetExplorer.configuration.title": "Game Asset Explorer",
   "gameAssetExplorer.configuration.assetDirectories.description": "画像アセットを再帰的にスキャンする、ワークスペース相対のフォルダーです。",
   "gameAssetExplorer.configuration.assetProfile.description": "アセットの分類と絞り込みに使用するゲームジャンル / Asset Profileです。",
@@ -19,5 +19,8 @@
   "gameAssetExplorer.configuration.assetProfile.visualNovel": "キャラクター、表情、背景、CG、UI、エフェクトなどのビジュアルノベル向けカテゴリです。",
   "gameAssetExplorer.configuration.assetProfile.cardGame": "カード、キャラクター、フレーム、アイコン、エフェクト、背景などのカードゲーム向けカテゴリです。",
   "gameAssetExplorer.configuration.assetProfile.custom": "gameAssetExplorer.customAssetTypes に設定したカテゴリを使用します。",
-  "gameAssetExplorer.configuration.customAssetTypes.description": "Asset ProfileがCustomの場合に利用できるAsset Typeです。"
+  "gameAssetExplorer.configuration.customAssetTypes.description": "Asset ProfileがCustomの場合に利用できるAsset Typeです。",
+  "gameAssetExplorer.command.showCategorySummary": "Game Asset Explorer: アセットカテゴリを表示",
+  "gameAssetExplorer.command.setAssetSubtype": "Game Asset Explorer: 選択アセットのサブタイプを設定",
+  "gameAssetExplorer.configuration.assetProfileOverrides.description": "アクティブなAsset Profileに対するプロジェクト単位の上書きです。カテゴリの追加・削除や想定サブタイプスロットを設定できます。"
 }
