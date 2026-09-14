@@ -135,5 +135,7 @@
   "Set subtype · {0}": "サブタイプを設定 · {0}",
   "{0} subtype": "{0} のサブタイプ",
   "Set subtype to {0}.": "サブタイプを {0} に設定しました。",
-  "Cleared asset subtype.": "アセットのサブタイプをクリアしました。"
+  "Cleared asset subtype.": "アセットのサブタイプをクリアしました。",
+  "Genre / Profile": "ジャンル / プロファイル",
+  "Unable to change Asset Profile.": "アセットプロファイルを変更できませんでした。"
 }

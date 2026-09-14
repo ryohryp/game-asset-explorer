@@ -135,5 +135,7 @@
   "Set subtype · {0}": "Set subtype · {0}",
   "{0} subtype": "{0} subtype",
   "Set subtype to {0}.": "Set subtype to {0}.",
-  "Cleared asset subtype.": "Cleared asset subtype."
+  "Cleared asset subtype.": "Cleared asset subtype.",
+  "Genre / Profile": "Genre / Profile",
+  "Unable to change Asset Profile.": "Unable to change Asset Profile."
 }
