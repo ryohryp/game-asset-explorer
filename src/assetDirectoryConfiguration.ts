@@ -59,7 +59,9 @@ export async function updateAssetDirectoryContext(): Promise<AssetDirectoryAvail
 export async function configureAssetDirectories(): Promise<boolean> {
   const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
   if (workspaceFolders.length === 0) {
-    await vscode.window.showWarningMessage("Game Asset Explorer: Open a workspace before configuring asset directories.");
+    await vscode.window.showWarningMessage(
+      `Game Asset Explorer: ${vscode.l10n.t("Open a workspace before configuring asset directories.")}`,
+    );
     return false;
   }
 
@@ -68,8 +70,8 @@ export async function configureAssetDirectories(): Promise<boolean> {
     canSelectFolders: true,
     canSelectMany: true,
     defaultUri: workspaceFolders[0].uri,
-    openLabel: "Use as Asset Directory",
-    title: "Game Asset Explorer: Select Asset Directories",
+    openLabel: vscode.l10n.t("Use as Asset Directory"),
+    title: `Game Asset Explorer: ${vscode.l10n.t("Select Asset Directories")}`,
   });
 
   if (!selectedDirectories || selectedDirectories.length === 0) {
@@ -113,7 +115,7 @@ export async function configureAssetDirectories(): Promise<boolean> {
 
   if (selectedByWorkspace.size === 0) {
     await vscode.window.showWarningMessage(
-      "Game Asset Explorer: Select folders inside the currently opened workspace.",
+      `Game Asset Explorer: ${vscode.l10n.t("Select folders inside the currently opened workspace.")}`,
     );
     return false;
   }
@@ -132,10 +134,10 @@ export async function configureAssetDirectories(): Promise<boolean> {
   }
 
   const skippedSuffix = skippedOutsideWorkspace > 0
-    ? ` ${skippedOutsideWorkspace} folder${skippedOutsideWorkspace === 1 ? " was" : "s were"} ignored because they are outside the workspace.`
+    ? vscode.l10n.t(" {0} folders were ignored because they are outside the workspace.", skippedOutsideWorkspace)
     : "";
   await vscode.window.showInformationMessage(
-    `Game Asset Explorer: Configured ${acceptedDirectoryCount} asset director${acceptedDirectoryCount === 1 ? "y" : "ies"}.${skippedSuffix}`,
+    `Game Asset Explorer: ${vscode.l10n.t("Configured {0} asset directories.{1}", acceptedDirectoryCount, skippedSuffix)}`,
   );
   return true;
 }

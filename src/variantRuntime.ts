@@ -24,19 +24,23 @@ export const OPENAI_API_KEY_SECRET = "gameAssetExplorer.openAiApiKey";
 
 export async function storeOpenAiApiKey(context: vscode.ExtensionContext): Promise<boolean> {
   const value = await vscode.window.showInputBox({
-    title: "Game Asset Explorer: OpenAI API Key",
-    prompt: "Enter the OpenAI API key used for Generate Variant.",
+    title: `Game Asset Explorer: ${vscode.l10n.t("OpenAI API Key")}`,
+    prompt: vscode.l10n.t("Enter the OpenAI API key used for Generate Variant."),
     password: true,
     ignoreFocusOut: true,
   });
   if (value === undefined) return false;
   const apiKey = value.trim();
   if (!apiKey) {
-    await vscode.window.showWarningMessage("Game Asset Explorer: API key was not changed because the value was empty.");
+    await vscode.window.showWarningMessage(
+      `Game Asset Explorer: ${vscode.l10n.t("API key was not changed because the value was empty.")}`,
+    );
     return false;
   }
   await context.secrets.store(OPENAI_API_KEY_SECRET, apiKey);
-  await vscode.window.showInformationMessage("Game Asset Explorer: OpenAI API key stored securely.");
+  await vscode.window.showInformationMessage(
+    `Game Asset Explorer: ${vscode.l10n.t("OpenAI API key stored securely.")}`,
+  );
   return true;
 }
 
@@ -48,7 +52,9 @@ export async function startOpenAiVariantReview(
 ): Promise<VariantReviewSession> {
   const workspaceFolder = resolveWorkspaceFolder(selectedAsset);
   const apiKey = (await context.secrets.get(OPENAI_API_KEY_SECRET))?.trim();
-  if (!apiKey) throw new Error("OpenAI API key is not configured. Run 'Game Asset Explorer: Set OpenAI API Key' first.");
+  if (!apiKey) {
+    throw new Error(vscode.l10n.t("OpenAI API key is not configured. Run 'Game Asset Explorer: Set OpenAI API Key' first."));
+  }
   const validationContext = getGenerationValidationContext(selectedAsset, allAssets);
   const provider = new OpenAiImageGenerationProvider({
     apiKey,

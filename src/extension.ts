@@ -106,7 +106,9 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!workspaceFolders || workspaceFolders.length === 0) {
       discoveredAssets = [];
       if (showMessage) {
-        await vscode.window.showWarningMessage("Game Asset Explorer: Open a workspace before scanning assets.");
+        await vscode.window.showWarningMessage(
+          `Game Asset Explorer: ${vscode.l10n.t("Open a workspace before scanning assets.")}`,
+        );
       }
       return discoveredAssets;
     }
@@ -148,7 +150,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (showMessage) {
       const warningSuffix = warnings.length > 0 ? ` (${warnings.length} warning${warnings.length === 1 ? "" : "s"})` : "";
       await vscode.window.showInformationMessage(
-        `Game Asset Explorer: Found ${discoveredAssets.length} image asset${discoveredAssets.length === 1 ? "" : "s"}${warningSuffix}.`,
+        `Game Asset Explorer: ${vscode.l10n.t("Found {0} image assets{1}.", discoveredAssets.length, warningSuffix)}`,
       );
     }
 
@@ -312,7 +314,14 @@ export function activate(context: vscode.ExtensionContext): void {
         if (targets.length === 0) throw new Error("No Uncategorized assets remain in this folder.");
         const updatedCount = await updateWorkspaceAssetTypes(targets, assetType, activeProfile, assetTypeStore);
         const assets = await scanAndStore(false);
-        await vscode.window.showInformationMessage(`Game Asset Explorer: Assigned ${updatedCount} asset${updatedCount === 1 ? "" : "s"} in ${folder || "Workspace root"} as ${assetType}.`);
+        await vscode.window.showInformationMessage(
+          `Game Asset Explorer: ${vscode.l10n.t(
+            "Assigned {0} assets in {1} as {2}.",
+            updatedCount,
+            folder || vscode.l10n.t("Workspace root"),
+            assetType,
+          )}`,
+        );
         return assets;
       },
       onSelect: async (identity) => {
@@ -346,7 +355,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onSetAssetType: async (identity, assetType) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
-          throw new Error("Selected asset is no longer available. Refresh and try again.");
+          throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
         }
 
         activeProfile = getConfiguredAssetProfile();
@@ -356,7 +365,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onSetCharacter: async (identity, character) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
-          throw new Error("Selected asset is no longer available. Refresh and try again.");
+          throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
         }
 
         await updateWorkspaceAssetCharacter(workspaceAsset, character, assetTypeStore);
@@ -390,7 +399,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onStartVariant: async (identity, input) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
-          throw new Error("Selected asset is no longer available. Refresh and try again.");
+          throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
         }
 
         activeVariantAsset = workspaceAsset;
@@ -413,7 +422,9 @@ export function activate(context: vscode.ExtensionContext): void {
         await reviewController.approve(candidateId);
         activeVariantAsset = undefined;
         const assets = await scanAndStore(false);
-        await vscode.window.showInformationMessage("Game Asset Explorer: Generated variant approved and added to the workspace.");
+        await vscode.window.showInformationMessage(
+          `Game Asset Explorer: ${vscode.l10n.t("Generated variant approved and added to the workspace.")}`,
+        );
         return assets;
       },
       onRejectVariant: async () => {
