@@ -3,11 +3,17 @@ import * as vscode from "vscode";
 import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
 import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
+import { buildAssetCategorySummary } from "./core/assetCategorySummary";
 import { selectUncategorizedAssetsInFolder } from "./core/bulkAssetTypeAssignment";
 import { analyzeFolderOrganization } from "./core/folderOrganization";
 import { buildOrganizationPrompt } from "./core/organizationPrompt";
 import { enrichOrganizationReportWithFolderIntent } from "./organizationIntentWorkspace";
-import { resolveAssetProfile, type AssetProfile } from "./core/assetProfiles";
+import {
+  getAssetSubtypes,
+  resolveAssetProfile,
+  type AssetProfile,
+  type AssetProfileCustomization,
+} from "./core/assetProfiles";
 import { isSupportedAssetPath, scanAssets } from "./core/assetScanner";
 import { ASSET_TYPE_METADATA_PATH } from "./core/assetTypeMetadata";
 import { DebouncedAction } from "./core/debouncedAction";
@@ -16,6 +22,7 @@ import { VISUAL_CANON_PATH } from "./core/visualCanon";
 import {
   loadWorkspaceAssetTypes,
   updateWorkspaceAssetCharacter,
+  updateWorkspaceAssetSubtype,
   updateWorkspaceAssetType,
   updateWorkspaceAssetTypes,
   type WorkspaceAssetTypeStore,
@@ -46,6 +53,7 @@ let disposeWatcherResources: (() => void) | undefined;
 export function activate(context: vscode.ExtensionContext): void {
   let activePanel: AssetGridPanel | undefined;
   let activeProfile = getConfiguredAssetProfile();
+  let selectedAssetIdentity: string | undefined;
   let watcherDisposables: vscode.Disposable[] = [];
   let watcherRefresh: DebouncedAction | undefined;
 
@@ -268,6 +276,104 @@ export function activate(context: vscode.ExtensionContext): void {
     await storeOpenAiApiKey(context);
   });
 
+  const showCategorySummaryCommand = vscode.commands.registerCommand("gameAssetExplorer.showCategorySummary", async () => {
+    const assets = discoveredAssets.length > 0 ? discoveredAssets : await scanAndStore(false);
+    activeProfile = getConfiguredAssetProfile();
+    const summary = buildAssetCategorySummary(activeProfile, assets);
+    const items: vscode.QuickPickItem[] = [];
+
+    for (const category of summary.categories) {
+      if (category.subtypes.length === 0) {
+        items.push({
+          label: category.assetType,
+          description: `${category.count} asset${category.count === 1 ? "" : "s"}`,
+        });
+        continue;
+      }
+
+      items.push({
+        label: `${category.assetType} (${category.count})`,
+        kind: vscode.QuickPickItemKind.Separator,
+      });
+      for (const subtype of category.subtypes) {
+        items.push({
+          label: `$(symbol-field) ${subtype.subtype}`,
+          description: `${subtype.count} asset${subtype.count === 1 ? "" : "s"}`,
+          detail: subtype.count === 0 ? "Expected slot · currently empty" : "Expected slot",
+        });
+      }
+      if (category.unsetSubtypeCount > 0) {
+        items.push({
+          label: "$(question) Subtype unset",
+          description: `${category.unsetSubtypeCount} asset${category.unsetSubtypeCount === 1 ? "" : "s"}`,
+        });
+      }
+    }
+
+    items.push({ label: "Other", kind: vscode.QuickPickItemKind.Separator });
+    items.push({
+      label: summary.uncategorizedLabel,
+      description: `${summary.uncategorizedCount} asset${summary.uncategorizedCount === 1 ? "" : "s"}`,
+    });
+
+    await vscode.window.showQuickPick(items, {
+      title: `Asset Categories · ${activeProfile.label}`,
+      placeHolder: "Expected categories and subtype slots, including empty slots",
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+  });
+
+  const setAssetSubtypeCommand = vscode.commands.registerCommand("gameAssetExplorer.setAssetSubtype", async () => {
+    const selectedAsset = selectedAssetIdentity ? findAsset(selectedAssetIdentity) : undefined;
+    if (!selectedAsset) {
+      await vscode.window.showInformationMessage("Game Asset Explorer: Select an asset in Asset Grid first.");
+      return;
+    }
+    if (!selectedAsset.assetType) {
+      await vscode.window.showInformationMessage("Game Asset Explorer: Assign an Asset Type before assigning a subtype.");
+      return;
+    }
+
+    activeProfile = getConfiguredAssetProfile();
+    const subtypes = getAssetSubtypes(activeProfile, selectedAsset.assetType);
+    if (subtypes.length === 0) {
+      await vscode.window.showInformationMessage(
+        `Game Asset Explorer: ${selectedAsset.assetType} has no subtype slots in the active ${activeProfile.label} profile.`,
+      );
+      return;
+    }
+
+    type SubtypePick = vscode.QuickPickItem & { assetSubtype: string | undefined };
+    const choices: SubtypePick[] = [
+      {
+        label: "$(circle-slash) Clear subtype",
+        description: selectedAsset.assetSubtype ? `Currently ${selectedAsset.assetSubtype}` : "Subtype is already unset",
+        assetSubtype: undefined,
+      },
+      ...subtypes.map((assetSubtype): SubtypePick => ({
+        label: assetSubtype,
+        description: selectedAsset.assetSubtype === assetSubtype ? "Current subtype" : undefined,
+        assetSubtype,
+      })),
+    ];
+    const picked = await vscode.window.showQuickPick(choices, {
+      title: `Set subtype · ${selectedAsset.asset.fileName}`,
+      placeHolder: `${selectedAsset.assetType} subtype`,
+    });
+    if (!picked) {
+      return;
+    }
+
+    await updateWorkspaceAssetSubtype(selectedAsset, picked.assetSubtype, activeProfile, assetTypeStore);
+    await refreshFromFilesystem();
+    await vscode.window.showInformationMessage(
+      picked.assetSubtype
+        ? `Game Asset Explorer: Set subtype to ${picked.assetSubtype}.`
+        : "Game Asset Explorer: Cleared asset subtype.",
+    );
+  });
+
   const openCommand = vscode.commands.registerCommand("gameAssetExplorer.openAssetGrid", async () => {
     let activeVariantAsset: WorkspaceAsset | undefined;
     activeProfile = getConfiguredAssetProfile();
@@ -316,8 +422,10 @@ export function activate(context: vscode.ExtensionContext): void {
         return assets;
       },
       onSelect: async (identity) => {
+        selectedAssetIdentity = identity;
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
+          selectedAssetIdentity = undefined;
           return { status: "missing" as const };
         }
 
@@ -491,7 +599,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const configurationListener = vscode.workspace.onDidChangeConfiguration((event) => {
     const assetDirectoriesChanged = event.affectsConfiguration("gameAssetExplorer.assetDirectories");
     const assetProfileChanged = event.affectsConfiguration("gameAssetExplorer.assetProfile")
-      || event.affectsConfiguration("gameAssetExplorer.customAssetTypes");
+      || event.affectsConfiguration("gameAssetExplorer.customAssetTypes")
+      || event.affectsConfiguration("gameAssetExplorer.assetProfileOverrides");
     if (!assetDirectoriesChanged && !assetProfileChanged) {
       return;
     }
@@ -520,6 +629,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     scanCommand,
     setOpenAiApiKeyCommand,
+    showCategorySummaryCommand,
+    setAssetSubtypeCommand,
     openCommand,
     configureAssetDirectoriesCommand,
     assetExplorerView,
@@ -541,6 +652,7 @@ function getConfiguredAssetProfile(): AssetProfile {
   return resolveAssetProfile(
     configuration.get<string>("assetProfile", "generic"),
     configuration.get<string[]>("customAssetTypes", []),
+    configuration.get<AssetProfileCustomization>("assetProfileOverrides", {}),
   );
 }
 
