@@ -5,6 +5,7 @@
   "Workspace root": "ワークスペース直下",
   "Generated variant approved and added to the workspace.": "生成したバリアントを承認し、ワークスペースへ追加しました。",
   "Selected asset is no longer available. Refresh and try again.": "選択したアセットは利用できません。更新してからもう一度お試しください。",
+  "Asset Type assignment saved. Re-run Analyze Organization to verify the finding is resolved.": "アセット種類を保存しました。構成を再分析して、この指摘が解消したことを確認してください。",
   "Open a workspace before configuring asset directories.": "アセットフォルダーを設定する前にワークスペースを開いてください。",
   "Use as Asset Directory": "アセットフォルダーとして使用",
   "Select Asset Directories": "アセットフォルダーを選択",
