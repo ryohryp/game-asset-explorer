@@ -3,6 +3,7 @@
   "extension.description": "VS Codeでゲーム画像アセットを管理するためのAsset DevToolsです。",
   "gameAssetExplorer.command.scanAssets": "Game Asset Explorer: アセットをスキャン",
   "gameAssetExplorer.command.openAssetGrid": "Game Asset Explorer: アセットグリッドを開く",
+  "gameAssetExplorer.command.generateNewAssetPrompt": "Game Asset Explorer: 新規アセット用プロンプトを生成",
   "gameAssetExplorer.command.configureAssetDirectories": "Game Asset Explorer: アセットフォルダーを設定",
   "gameAssetExplorer.command.setOpenAiApiKey": "Game Asset Explorer: OpenAI APIキーを設定",
   "gameAssetExplorer.viewContainer.title": "Game Asset Explorer",
