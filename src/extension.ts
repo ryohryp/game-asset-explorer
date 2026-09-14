@@ -114,7 +114,9 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!workspaceFolders || workspaceFolders.length === 0) {
       discoveredAssets = [];
       if (showMessage) {
-        await vscode.window.showWarningMessage("Game Asset Explorer: Open a workspace before scanning assets.");
+        await vscode.window.showWarningMessage(
+          `Game Asset Explorer: ${vscode.l10n.t("Open a workspace before scanning assets.")}`,
+        );
       }
       return discoveredAssets;
     }
@@ -156,7 +158,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (showMessage) {
       const warningSuffix = warnings.length > 0 ? ` (${warnings.length} warning${warnings.length === 1 ? "" : "s"})` : "";
       await vscode.window.showInformationMessage(
-        `Game Asset Explorer: Found ${discoveredAssets.length} image asset${discoveredAssets.length === 1 ? "" : "s"}${warningSuffix}.`,
+        `Game Asset Explorer: ${vscode.l10n.t("Found {0} image assets{1}.", discoveredAssets.length, warningSuffix)}`,
       );
     }
 
@@ -281,44 +283,51 @@ export function activate(context: vscode.ExtensionContext): void {
     activeProfile = getConfiguredAssetProfile();
     const summary = buildAssetCategorySummary(activeProfile, assets);
     const items: vscode.QuickPickItem[] = [];
+    const countLabel = (count: number): string => vscode.l10n.t(
+      count === 1 ? "{0} asset" : "{0} assets",
+      count,
+    );
 
     for (const category of summary.categories) {
+      const categoryLabel = vscode.l10n.t(category.assetType);
       if (category.subtypes.length === 0) {
         items.push({
-          label: category.assetType,
-          description: `${category.count} asset${category.count === 1 ? "" : "s"}`,
+          label: categoryLabel,
+          description: countLabel(category.count),
         });
         continue;
       }
 
       items.push({
-        label: `${category.assetType} (${category.count})`,
+        label: `${categoryLabel} (${category.count})`,
         kind: vscode.QuickPickItemKind.Separator,
       });
       for (const subtype of category.subtypes) {
         items.push({
           label: `$(symbol-field) ${subtype.subtype}`,
-          description: `${subtype.count} asset${subtype.count === 1 ? "" : "s"}`,
-          detail: subtype.count === 0 ? "Expected slot · currently empty" : "Expected slot",
+          description: countLabel(subtype.count),
+          detail: subtype.count === 0
+            ? vscode.l10n.t("Expected slot · currently empty")
+            : vscode.l10n.t("Expected slot"),
         });
       }
       if (category.unsetSubtypeCount > 0) {
         items.push({
-          label: "$(question) Subtype unset",
-          description: `${category.unsetSubtypeCount} asset${category.unsetSubtypeCount === 1 ? "" : "s"}`,
+          label: `$(question) ${vscode.l10n.t("Subtype unset")}`,
+          description: countLabel(category.unsetSubtypeCount),
         });
       }
     }
 
-    items.push({ label: "Other", kind: vscode.QuickPickItemKind.Separator });
+    items.push({ label: vscode.l10n.t("Other"), kind: vscode.QuickPickItemKind.Separator });
     items.push({
-      label: summary.uncategorizedLabel,
-      description: `${summary.uncategorizedCount} asset${summary.uncategorizedCount === 1 ? "" : "s"}`,
+      label: vscode.l10n.t(summary.uncategorizedLabel),
+      description: countLabel(summary.uncategorizedCount),
     });
 
     await vscode.window.showQuickPick(items, {
-      title: `Asset Categories · ${activeProfile.label}`,
-      placeHolder: "Expected categories and subtype slots, including empty slots",
+      title: vscode.l10n.t("Asset Categories · {0}", vscode.l10n.t(activeProfile.label)),
+      placeHolder: vscode.l10n.t("Expected categories and subtype slots, including empty slots"),
       matchOnDescription: true,
       matchOnDetail: true,
     });
@@ -327,11 +336,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const setAssetSubtypeCommand = vscode.commands.registerCommand("gameAssetExplorer.setAssetSubtype", async () => {
     const selectedAsset = selectedAssetIdentity ? findAsset(selectedAssetIdentity) : undefined;
     if (!selectedAsset) {
-      await vscode.window.showInformationMessage("Game Asset Explorer: Select an asset in Asset Grid first.");
+      await vscode.window.showInformationMessage(
+        `Game Asset Explorer: ${vscode.l10n.t("Select an asset in Asset Grid first.")}`,
+      );
       return;
     }
     if (!selectedAsset.assetType) {
-      await vscode.window.showInformationMessage("Game Asset Explorer: Assign an Asset Type before assigning a subtype.");
+      await vscode.window.showInformationMessage(
+        `Game Asset Explorer: ${vscode.l10n.t("Assign an Asset Type before assigning a subtype.")}`,
+      );
       return;
     }
 
@@ -339,7 +352,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const subtypes = getAssetSubtypes(activeProfile, selectedAsset.assetType);
     if (subtypes.length === 0) {
       await vscode.window.showInformationMessage(
-        `Game Asset Explorer: ${selectedAsset.assetType} has no subtype slots in the active ${activeProfile.label} profile.`,
+        `Game Asset Explorer: ${vscode.l10n.t(
+          "{0} has no subtype slots in the active {1} profile.",
+          vscode.l10n.t(selectedAsset.assetType),
+          vscode.l10n.t(activeProfile.label),
+        )}`,
       );
       return;
     }
@@ -347,19 +364,23 @@ export function activate(context: vscode.ExtensionContext): void {
     type SubtypePick = vscode.QuickPickItem & { assetSubtype: string | undefined };
     const choices: SubtypePick[] = [
       {
-        label: "$(circle-slash) Clear subtype",
-        description: selectedAsset.assetSubtype ? `Currently ${selectedAsset.assetSubtype}` : "Subtype is already unset",
+        label: `$(circle-slash) ${vscode.l10n.t("Clear subtype")}`,
+        description: selectedAsset.assetSubtype
+          ? vscode.l10n.t("Currently {0}", selectedAsset.assetSubtype)
+          : vscode.l10n.t("Subtype is already unset"),
         assetSubtype: undefined,
       },
       ...subtypes.map((assetSubtype): SubtypePick => ({
         label: assetSubtype,
-        description: selectedAsset.assetSubtype === assetSubtype ? "Current subtype" : undefined,
+        description: selectedAsset.assetSubtype === assetSubtype
+          ? vscode.l10n.t("Current subtype")
+          : undefined,
         assetSubtype,
       })),
     ];
     const picked = await vscode.window.showQuickPick(choices, {
-      title: `Set subtype · ${selectedAsset.asset.fileName}`,
-      placeHolder: `${selectedAsset.assetType} subtype`,
+      title: vscode.l10n.t("Set subtype · {0}", selectedAsset.asset.fileName),
+      placeHolder: vscode.l10n.t("{0} subtype", vscode.l10n.t(selectedAsset.assetType)),
     });
     if (!picked) {
       return;
@@ -369,8 +390,8 @@ export function activate(context: vscode.ExtensionContext): void {
     await refreshFromFilesystem();
     await vscode.window.showInformationMessage(
       picked.assetSubtype
-        ? `Game Asset Explorer: Set subtype to ${picked.assetSubtype}.`
-        : "Game Asset Explorer: Cleared asset subtype.",
+        ? `Game Asset Explorer: ${vscode.l10n.t("Set subtype to {0}.", picked.assetSubtype)}`
+        : `Game Asset Explorer: ${vscode.l10n.t("Cleared asset subtype.")}`,
     );
   });
 
@@ -418,7 +439,14 @@ export function activate(context: vscode.ExtensionContext): void {
         if (targets.length === 0) throw new Error("No Uncategorized assets remain in this folder.");
         const updatedCount = await updateWorkspaceAssetTypes(targets, assetType, activeProfile, assetTypeStore);
         const assets = await scanAndStore(false);
-        await vscode.window.showInformationMessage(`Game Asset Explorer: Assigned ${updatedCount} asset${updatedCount === 1 ? "" : "s"} in ${folder || "Workspace root"} as ${assetType}.`);
+        await vscode.window.showInformationMessage(
+          `Game Asset Explorer: ${vscode.l10n.t(
+            "Assigned {0} assets in {1} as {2}.",
+            updatedCount,
+            folder || vscode.l10n.t("Workspace root"),
+            assetType,
+          )}`,
+        );
         return assets;
       },
       onSelect: async (identity) => {
@@ -454,7 +482,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onSetAssetType: async (identity, assetType) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
-          throw new Error("Selected asset is no longer available. Refresh and try again.");
+          throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
         }
 
         activeProfile = getConfiguredAssetProfile();
@@ -464,7 +492,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onSetCharacter: async (identity, character) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
-          throw new Error("Selected asset is no longer available. Refresh and try again.");
+          throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
         }
 
         await updateWorkspaceAssetCharacter(workspaceAsset, character, assetTypeStore);
@@ -498,7 +526,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onStartVariant: async (identity, input) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {
-          throw new Error("Selected asset is no longer available. Refresh and try again.");
+          throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
         }
 
         activeVariantAsset = workspaceAsset;
@@ -521,7 +549,9 @@ export function activate(context: vscode.ExtensionContext): void {
         await reviewController.approve(candidateId);
         activeVariantAsset = undefined;
         const assets = await scanAndStore(false);
-        await vscode.window.showInformationMessage("Game Asset Explorer: Generated variant approved and added to the workspace.");
+        await vscode.window.showInformationMessage(
+          `Game Asset Explorer: ${vscode.l10n.t("Generated variant approved and added to the workspace.")}`,
+        );
         return assets;
       },
       onRejectVariant: async () => {

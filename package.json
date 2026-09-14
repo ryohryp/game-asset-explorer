@@ -1,7 +1,7 @@
 {
   "name": "game-asset-explorer",
-  "displayName": "Game Asset Explorer",
-  "description": "Asset DevTools for managing game image assets in VS Code.",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "0.0.1",
   "publisher": "ryohryp",
   "engines": {
@@ -11,42 +11,43 @@
     "Other"
   ],
   "main": "./dist/src/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "commands": [
       {
         "command": "gameAssetExplorer.scanAssets",
-        "title": "Game Asset Explorer: Scan Assets",
+        "title": "%gameAssetExplorer.command.scanAssets%",
         "icon": "$(refresh)"
       },
       {
         "command": "gameAssetExplorer.openAssetGrid",
-        "title": "Game Asset Explorer: Open Asset Grid",
+        "title": "%gameAssetExplorer.command.openAssetGrid%",
         "icon": "$(preview)"
       },
       {
         "command": "gameAssetExplorer.showCategorySummary",
-        "title": "Game Asset Explorer: Show Asset Categories",
+        "title": "%gameAssetExplorer.command.showCategorySummary%",
         "icon": "$(list-tree)"
       },
       {
         "command": "gameAssetExplorer.setAssetSubtype",
-        "title": "Game Asset Explorer: Set Selected Asset Subtype"
+        "title": "%gameAssetExplorer.command.setAssetSubtype%"
       },
       {
         "command": "gameAssetExplorer.configureAssetDirectories",
-        "title": "Game Asset Explorer: Configure Asset Directories",
+        "title": "%gameAssetExplorer.command.configureAssetDirectories%",
         "icon": "$(folder-opened)"
       },
       {
         "command": "gameAssetExplorer.setOpenAiApiKey",
-        "title": "Game Asset Explorer: Set OpenAI API Key"
+        "title": "%gameAssetExplorer.command.setOpenAiApiKey%"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "gameAssetExplorer",
-          "title": "Game Asset Explorer",
+          "title": "%gameAssetExplorer.viewContainer.title%",
           "icon": "media/asset-explorer.svg"
         }
       ]
@@ -55,24 +56,24 @@
       "gameAssetExplorer": [
         {
           "id": "gameAssetExplorer.explorer",
-          "name": "Assets"
+          "name": "%gameAssetExplorer.view.assets%"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "gameAssetExplorer.explorer",
-        "contents": "Open a game project folder to start exploring image assets.\n[Open Folder](command:workbench.action.files.openFolder)",
+        "contents": "%gameAssetExplorer.welcome.noWorkspace%",
         "when": "!gameAssetExplorer.hasWorkspace"
       },
       {
         "view": "gameAssetExplorer.explorer",
-        "contents": "Choose the folders that contain your game images.\n[Configure Asset Directories](command:gameAssetExplorer.configureAssetDirectories)",
+        "contents": "%gameAssetExplorer.welcome.configureDirectories%",
         "when": "gameAssetExplorer.hasWorkspace && !gameAssetExplorer.hasUsableAssetDirectories"
       },
       {
         "view": "gameAssetExplorer.explorer",
-        "contents": "Browse and inspect the configured game image assets.\n[Open Asset Grid](command:gameAssetExplorer.openAssetGrid)\n[Show Asset Categories](command:gameAssetExplorer.showCategorySummary)\n[Configure Asset Directories](command:gameAssetExplorer.configureAssetDirectories)",
+        "contents": "%gameAssetExplorer.welcome.ready%",
         "when": "gameAssetExplorer.hasUsableAssetDirectories"
       }
     ],
@@ -89,19 +90,19 @@
           "group": "navigation@2"
         },
         {
-          "command": "gameAssetExplorer.showCategorySummary",
-          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
-          "group": "navigation@3"
-        },
-        {
           "command": "gameAssetExplorer.configureAssetDirectories",
           "when": "view == gameAssetExplorer.explorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "gameAssetExplorer.showCategorySummary",
+          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
+          "group": "navigation@3"
         }
       ]
     },
     "configuration": {
-      "title": "Game Asset Explorer",
+      "title": "%gameAssetExplorer.configuration.title%",
       "properties": {
         "gameAssetExplorer.assetDirectories": {
           "type": "array",
@@ -110,7 +111,7 @@
           },
           "default": [],
           "scope": "resource",
-          "description": "Workspace-relative directories to scan recursively for image assets."
+          "description": "%gameAssetExplorer.configuration.assetDirectories.description%"
         },
         "gameAssetExplorer.assetProfile": {
           "type": "string",
@@ -123,16 +124,16 @@
             "custom"
           ],
           "enumDescriptions": [
-            "General-purpose image asset categories.",
-            "RPG categories such as Character, Enemy, Item, Equipment, Skill, Map, UI, and Effect.",
-            "Action-game categories such as Character, Enemy, Weapon, Projectile, Stage, UI, and Effect.",
-            "Visual-novel categories such as Character, Expression, Background, CG, UI, and Effect.",
-            "Card-game categories such as Card, Character, Frame, Icon, Effect, and Background.",
-            "Use the categories configured in gameAssetExplorer.customAssetTypes."
+            "%gameAssetExplorer.configuration.assetProfile.generic%",
+            "%gameAssetExplorer.configuration.assetProfile.rpg%",
+            "%gameAssetExplorer.configuration.assetProfile.action%",
+            "%gameAssetExplorer.configuration.assetProfile.visualNovel%",
+            "%gameAssetExplorer.configuration.assetProfile.cardGame%",
+            "%gameAssetExplorer.configuration.assetProfile.custom%"
           ],
           "default": "generic",
           "scope": "window",
-          "description": "Game genre / Asset Profile used for semantic asset-type classification and filtering."
+          "description": "%gameAssetExplorer.configuration.assetProfile.description%"
         },
         "gameAssetExplorer.customAssetTypes": {
           "type": "array",
@@ -145,7 +146,7 @@
           "uniqueItems": true,
           "default": [],
           "scope": "window",
-          "description": "Asset types available when the active Asset Profile is Custom."
+          "description": "%gameAssetExplorer.configuration.customAssetTypes.description%"
         },
         "gameAssetExplorer.assetProfileOverrides": {
           "type": "object",
@@ -190,7 +191,7 @@
               }
             }
           },
-          "description": "Project-level overrides for the active Asset Profile. Add/remove categories or replace expected subtype slots. Store this in workspace settings to review the project convention in Git."
+          "description": "%gameAssetExplorer.configuration.assetProfileOverrides.description%"
         }
       }
     }
