@@ -6,9 +6,9 @@ import {
 } from "./localization";
 
 /**
- * Localizes the current monolithic Asset Grid Webview without changing the values
- * used by filters, metadata, messages, or project files. Keep this adapter limited
- * to presentation text; the existing Webview behavior remains authoritative.
+ * Localizes the current monolithic Asset Grid Webview without changing values used
+ * by filters, metadata, messages, or project files. Keep this adapter limited to
+ * presentation text; the existing Webview behavior remains authoritative.
  */
 export function localizeAssetGridHtml(
   html: string,
@@ -28,12 +28,41 @@ export function localizeAssetGridHtml(
 
   localized = replaceAttribute(localized, "placeholder", "Search filename or path", strings.searchPlaceholder);
   localized = replaceAttribute(localized, "aria-label", "Search assets", strings.searchAssets);
-  localized = replaceVisibleText(localized, "Analyze Organization", strings.analyzeOrganization);
-  localized = replaceVisibleText(localized, "Refresh", strings.refresh);
-  localized = replaceVisibleText(localized, "Re-run Analyze Organization", strings.rerunAnalyzeOrganization);
-  localized = replaceVisibleText(localized, "Grid", strings.grid);
-  localized = replaceVisibleText(localized, "Characters", strings.characters);
-  localized = replaceVisibleText(localized, "Clear filters", strings.clearFilters);
+  localized = localized
+    .replace(
+      '<button id="analyze-organization" class="secondary" type="button">Analyze Organization</button>',
+      `<button id="analyze-organization" class="secondary" type="button">${escapeHtml(strings.analyzeOrganization)}</button>`,
+    )
+    .replace(
+      '<button id="refresh" type="button">Refresh</button>',
+      `<button id="refresh" type="button">${escapeHtml(strings.refresh)}</button>`,
+    )
+    .replace(
+      '<button id="verify-organization" class="secondary compact" type="button">Re-run Analyze Organization</button>',
+      `<button id="verify-organization" class="secondary compact" type="button">${escapeHtml(strings.rerunAnalyzeOrganization)}</button>`,
+    )
+    .replace(
+      '<button id="clear-filters" class="secondary compact" type="button">Clear filters</button>',
+      `<button id="clear-filters" class="secondary compact" type="button">${escapeHtml(strings.clearFilters)}</button>`,
+    )
+    .replace('<label class="facet-label">View<select', `<label class="facet-label">${escapeHtml(strings.view)}<select`)
+    .replace('<label class="facet-label">Folder<select', `<label class="facet-label">${escapeHtml(strings.folder)}<select`)
+    .replace('<label class="facet-label">Asset Type<select', `<label class="facet-label">${escapeHtml(strings.assetType)}<select`)
+    .replace('<label class="facet-label">Format<select', `<label class="facet-label">${escapeHtml(strings.format)}<select`)
+    .replace('<label class="facet-label">Workspace<select', `<label class="facet-label">${escapeHtml(strings.workspace)}<select`)
+    .replaceAll('<option value="">All</option>', `<option value="">${escapeHtml(strings.all)}</option>`);
+
+  localized = transformSelect(localized, "view-mode", (contents) => contents
+    .replace(/(<option value="grid"[^>]*>)Grid<\/option>/, `$1${escapeHtml(strings.grid)}</option>`)
+    .replace(/(<option value="character"[^>]*>)Characters<\/option>/, `$1${escapeHtml(strings.characters)}</option>`));
+
+  localized = transformSelect(localized, "asset-type-filter", (contents) => contents.replace(
+    /(<option value="([^\"]+)">)([^<]+)( \(\d+\)<\/option>)/g,
+    (_match, prefix: string, _value: string, label: string, suffix: string) => (
+      `${prefix}${localizeAssetTypeHtml(label, strings)}${suffix}`
+    ),
+  ));
+
   localized = localized.replace(
     '<span id="filter-status" class="filter-status">No facet filters</span>',
     `<span id="filter-status" class="filter-status">${escapeHtml(strings.noFacetFilters)}</span>`,
@@ -49,37 +78,25 @@ export function localizeAssetGridHtml(
     '<div class="empty"><strong>No image assets found.</strong><span>Configure <code>gameAssetExplorer.assetDirectories</code> and refresh.</span></div>',
     `<div class="empty"><strong>${escapeHtml(strings.noImageAssetsFound)}</strong><span>${escapeHtml(strings.configureDirectoriesAndRefresh).replace("gameAssetExplorer.assetDirectories", "<code>gameAssetExplorer.assetDirectories</code>")}</span></div>`,
   );
-
-  localized = localized
-    .replace('<label class="facet-label">View<select', `<label class="facet-label">${escapeHtml(strings.view)}<select`)
-    .replace('<label class="facet-label">Folder<select', `<label class="facet-label">${escapeHtml(strings.folder)}<select`)
-    .replace('<label class="facet-label">Asset Type<select', `<label class="facet-label">${escapeHtml(strings.assetType)}<select`)
-    .replace('<label class="facet-label">Format<select', `<label class="facet-label">${escapeHtml(strings.format)}<select`)
-    .replace('<label class="facet-label">Workspace<select', `<label class="facet-label">${escapeHtml(strings.workspace)}<select`)
-    .replaceAll('<option value="">All</option>', `<option value="">${escapeHtml(strings.all)}</option>`);
-
   localized = localized.replace(
     /<span class="profile-status">Profile: ([^<]+)<\/span>/g,
-    (_match, profileLabel: string) => `<span class="profile-status">${escapeHtml(strings.profile)}: ${escapeHtml(localizeProfileLabel(profileLabel, strings))}</span>`,
+    (_match, profileLabel: string) => (
+      `<span class="profile-status">${escapeHtml(strings.profile)}: ${localizeProfileHtml(profileLabel, strings)}</span>`
+    ),
   );
   localized = localized.replace(
     /<div class="asset-type">([^<]+)<\/div>/g,
-    (_match, assetType: string) => `<div class="asset-type">${escapeHtml(localizeAssetTypeLabel(assetType, strings))}</div>`,
+    (_match, assetType: string) => `<div class="asset-type">${localizeAssetTypeHtml(assetType, strings)}</div>`,
   );
   localized = localized.replace(
     /<div class="character-name">Character: ([^<]+)<\/div>/g,
-    (_match, character: string) => `<div class="character-name">${escapeHtml(strings.character)}: ${escapeHtml(localizeCharacterLabel(character, strings))}</div>`,
+    (_match, character: string) => (
+      `<div class="character-name">${escapeHtml(strings.character)}: ${localizeCharacterHtml(character, strings)}</div>`
+    ),
   );
   localized = localized.replaceAll(
     '<div class="broken">Preview unavailable</div>',
     `<div class="broken">${escapeHtml(strings.previewUnavailable)}</div>`,
-  );
-  localized = localized.replace(
-    /(<option value="([^\"]+)">)([^<]+)( \(\d+\)<\/option>)/g,
-    (_match, prefix: string, value: string, label: string, suffix: string) => {
-      const translated = localizeAssetTypeLabel(label, strings);
-      return `${prefix}${escapeHtml(translated)}${suffix}`;
-    },
   );
 
   const scriptReplacements: ReadonlyArray<readonly [string, string]> = [
@@ -146,8 +163,28 @@ export function localizeAssetGridHtml(
   return localized;
 }
 
-function replaceVisibleText(html: string, source: string, target: string): string {
-  return html.replaceAll(`>${source}<`, `>${escapeHtml(target)}<`);
+function transformSelect(html: string, id: string, transform: (contents: string) => string): string {
+  const pattern = new RegExp(`(<select id="${id}"[^>]*>)([\\s\\S]*?)(<\\/select>)`);
+  return html.replace(pattern, (_match, open: string, contents: string, close: string) => (
+    `${open}${transform(contents)}${close}`
+  ));
+}
+
+function localizeAssetTypeHtml(value: string, strings: AssetGridUiStrings): string {
+  if (value === "Uncategorized" || Object.prototype.hasOwnProperty.call(strings.assetTypeLabels, value)) {
+    return escapeHtml(localizeAssetTypeLabel(value, strings));
+  }
+  return value;
+}
+
+function localizeCharacterHtml(value: string, strings: AssetGridUiStrings): string {
+  return value === "Unassigned" ? escapeHtml(localizeCharacterLabel(value, strings)) : value;
+}
+
+function localizeProfileHtml(value: string, strings: AssetGridUiStrings): string {
+  return Object.prototype.hasOwnProperty.call(strings.profileLabels, value)
+    ? escapeHtml(localizeProfileLabel(value, strings))
+    : value;
 }
 
 function replaceAttribute(html: string, attribute: string, source: string, target: string): string {
