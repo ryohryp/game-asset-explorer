@@ -37,9 +37,9 @@ test("localizes Asset Grid presentation while preserving internal values", () =>
   const html = `<!DOCTYPE html>
 <html lang="en">
 <body>
-<button id="refresh">Refresh</button>
+<button id="refresh" type="button">Refresh</button>
 <span class="profile-status">Profile: Generic</span>
-<label class="facet-label">Asset Type<select><option value="Character">Character (1)</option></select></label>
+<label class="facet-label">Asset Type<select id="asset-type-filter"><option value="Character">Character (1)</option></select></label>
 <article data-character="Unassigned">
   <div class="asset-type">Character</div>
   <div class="character-name">Character: Unassigned</div>
