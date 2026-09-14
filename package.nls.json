@@ -3,6 +3,7 @@
   "extension.description": "Asset DevTools for managing game image assets in VS Code.",
   "gameAssetExplorer.command.scanAssets": "Game Asset Explorer: Scan Assets",
   "gameAssetExplorer.command.openAssetGrid": "Game Asset Explorer: Open Asset Grid",
+  "gameAssetExplorer.command.generateNewAssetPrompt": "Game Asset Explorer: Generate New Asset Prompt",
   "gameAssetExplorer.command.configureAssetDirectories": "Game Asset Explorer: Configure Asset Directories",
   "gameAssetExplorer.command.setOpenAiApiKey": "Game Asset Explorer: Set OpenAI API Key",
   "gameAssetExplorer.viewContainer.title": "Game Asset Explorer",
