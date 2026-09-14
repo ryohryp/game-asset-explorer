@@ -106,7 +106,7 @@ export function registerGenerateNewAssetPromptCommand(): vscode.Disposable {
       assetDirectories,
     });
 
-    let result;
+    let result: ReturnType<typeof createNewAssetPrompt>;
     try {
       result = createNewAssetPrompt({
         assetKind: kind.value,
