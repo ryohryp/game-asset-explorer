@@ -5,6 +5,7 @@
   "Workspace root": "Workspace root",
   "Generated variant approved and added to the workspace.": "Generated variant approved and added to the workspace.",
   "Selected asset is no longer available. Refresh and try again.": "Selected asset is no longer available. Refresh and try again.",
+  "Asset Type assignment saved. Re-run Analyze Organization to verify the finding is resolved.": "Asset Type assignment saved. Re-run Analyze Organization to verify the finding is resolved.",
   "Open a workspace before configuring asset directories.": "Open a workspace before configuring asset directories.",
   "Use as Asset Directory": "Use as Asset Directory",
   "Select Asset Directories": "Select Asset Directories",
