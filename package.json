@@ -24,6 +24,15 @@
         "icon": "$(preview)"
       },
       {
+        "command": "gameAssetExplorer.showCategorySummary",
+        "title": "Game Asset Explorer: Show Asset Categories",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "gameAssetExplorer.setAssetSubtype",
+        "title": "Game Asset Explorer: Set Selected Asset Subtype"
+      },
+      {
         "command": "gameAssetExplorer.configureAssetDirectories",
         "title": "Game Asset Explorer: Configure Asset Directories",
         "icon": "$(folder-opened)"
@@ -63,7 +72,7 @@
       },
       {
         "view": "gameAssetExplorer.explorer",
-        "contents": "Browse and inspect the configured game image assets.\n[Open Asset Grid](command:gameAssetExplorer.openAssetGrid)\n[Configure Asset Directories](command:gameAssetExplorer.configureAssetDirectories)",
+        "contents": "Browse and inspect the configured game image assets.\n[Open Asset Grid](command:gameAssetExplorer.openAssetGrid)\n[Show Asset Categories](command:gameAssetExplorer.showCategorySummary)\n[Configure Asset Directories](command:gameAssetExplorer.configureAssetDirectories)",
         "when": "gameAssetExplorer.hasUsableAssetDirectories"
       }
     ],
@@ -80,9 +89,14 @@
           "group": "navigation@2"
         },
         {
+          "command": "gameAssetExplorer.showCategorySummary",
+          "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
+          "group": "navigation@3"
+        },
+        {
           "command": "gameAssetExplorer.configureAssetDirectories",
           "when": "view == gameAssetExplorer.explorer",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ]
     },
@@ -132,6 +146,51 @@
           "default": [],
           "scope": "window",
           "description": "Asset types available when the active Asset Profile is Custom."
+        },
+        "gameAssetExplorer.assetProfileOverrides": {
+          "type": "object",
+          "default": {},
+          "scope": "window",
+          "additionalProperties": false,
+          "properties": {
+            "addAssetTypes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "default": []
+            },
+            "removeAssetTypes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "default": []
+            },
+            "subtypes": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "maxItems": 32,
+                "uniqueItems": true
+              }
+            }
+          },
+          "description": "Project-level overrides for the active Asset Profile. Add/remove categories or replace expected subtype slots. Store this in workspace settings to review the project convention in Git."
         }
       }
     }
