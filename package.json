@@ -46,6 +46,11 @@
       {
         "command": "gameAssetExplorer.setOpenAiApiKey",
         "title": "%gameAssetExplorer.command.setOpenAiApiKey%"
+      },
+      {
+        "command": "gameAssetExplorer.showGitImageDiff",
+        "title": "Git Image Diff",
+        "icon": "$(git-compare)"
       }
     ],
     "viewsContainers": {
@@ -103,6 +108,11 @@
           "command": "gameAssetExplorer.showCategorySummary",
           "when": "view == gameAssetExplorer.explorer && gameAssetExplorer.hasUsableAssetDirectories",
           "group": "navigation@4"
+        },
+        {
+          "command": "gameAssetExplorer.showGitImageDiff",
+          "when": "view == gameAssetExplorer.explorer",
+          "group": "navigation@5"
         },
         {
           "command": "gameAssetExplorer.configureAssetDirectories",
