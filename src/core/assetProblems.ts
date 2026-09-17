@@ -23,21 +23,20 @@ export interface AssetProblem {
 
 export async function findAssetProblems(
   assets: readonly WorkspaceAsset[],
-  limits: AssetProblemLimits = DEFAULT_ASSET_PROBLEM_LIMITS,
+  limits: AssetProblemLimits | ((asset: WorkspaceAsset) => AssetProblemLimits) = DEFAULT_ASSET_PROBLEM_LIMITS,
 ): Promise<AssetProblem[]> {
   const problems: AssetProblem[] = [];
   for (const asset of assets) {
+    const assetLimits = typeof limits === "function" ? limits(asset) : limits;
     const fileStat = await stat(asset.asset.absolutePath);
     const bytes = await readFile(asset.asset.absolutePath);
     const dimensions = readImageDimensions(bytes);
     const reasons: string[] = [];
-    if (fileStat.size > limits.maxSizeBytes) reasons.push(`File size ${fileStat.size} bytes exceeds ${limits.maxSizeBytes}`);
-    if (dimensions && (dimensions.width > limits.maxWidth || dimensions.height > limits.maxHeight)) {
-      reasons.push(`Dimensions ${dimensions.width}×${dimensions.height} exceed ${limits.maxWidth}×${limits.maxHeight}`);
+    if (fileStat.size > assetLimits.maxSizeBytes) reasons.push(`File size ${fileStat.size} bytes exceeds ${assetLimits.maxSizeBytes}`);
+    if (dimensions && (dimensions.width > assetLimits.maxWidth || dimensions.height > assetLimits.maxHeight)) {
+      reasons.push(`Dimensions ${dimensions.width}×${dimensions.height} exceed ${assetLimits.maxWidth}×${assetLimits.maxHeight}`);
     }
-    if (reasons.length > 0) {
-      problems.push({ asset, sizeBytes: fileStat.size, ...dimensions, reasons });
-    }
+    if (reasons.length > 0) problems.push({ asset, sizeBytes: fileStat.size, ...dimensions, reasons });
   }
   return problems;
 }

@@ -259,3 +259,9 @@ The architecture intentionally does not define these yet:
 - background or batch generation
 
 These should be designed only when an implemented workflow requires them.
+
+## Asset Rules
+
+Project-specific Asset Problems limits may be stored in the Git-managed `.assetdevtools.json` file at a workspace root. The initial schema is intentionally small: a `rules` array with a `path` glob and optional `maxWidth`, `maxHeight`, and `maxSizeBytes` positive-integer limits.
+
+Rules refine the existing on-demand Asset Problems inspection only. They do not define asset existence, create an index, or replace the filesystem as source of truth. `*` matches within one path segment and `**` may span path segments. When no file or matching rule exists, the existing conservative Asset Problems defaults remain in effect.
