@@ -61,6 +61,11 @@
         "command": "gameAssetExplorer.showDuplicates",
         "title": "Duplicate Images",
         "icon": "$(files)"
+      },
+      {
+        "command": "gameAssetExplorer.showAssetProblems",
+        "title": "Asset Problems",
+        "icon": "$(warning)"
       }
     ],
     "viewsContainers": {

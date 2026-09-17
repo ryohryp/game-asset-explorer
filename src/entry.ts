@@ -4,6 +4,7 @@ import { registerGenerateNewAssetPromptCommand } from "./newAssetPromptCommand";
 import { registerGitImageDiffCommand } from "./gitImageDiffCommand";
 import { registerVariantMatrixCommand } from "./variantMatrixCommand";
 import { registerDuplicateDetectionCommand } from "./duplicateDetectionCommand";
+import { registerAssetProblemsCommand } from "./assetProblemsCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -12,6 +13,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerGitImageDiffCommand(),
     registerVariantMatrixCommand(getDiscoveredAssets),
     registerDuplicateDetectionCommand(getDiscoveredAssets),
+    registerAssetProblemsCommand(getDiscoveredAssets),
   );
 }
 
