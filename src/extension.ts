@@ -48,6 +48,8 @@ import {
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
+
+export function getDiscoveredAssets(): readonly WorkspaceAsset[] { return discoveredAssets; }
 let disposeWatcherResources: (() => void) | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {

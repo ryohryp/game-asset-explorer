@@ -51,6 +51,11 @@
         "command": "gameAssetExplorer.showGitImageDiff",
         "title": "Git Image Diff",
         "icon": "$(git-compare)"
+      },
+      {
+        "command": "gameAssetExplorer.showVariantMatrix",
+        "title": "Variant Matrix",
+        "icon": "$(table)"
       }
     ],
     "viewsContainers": {
