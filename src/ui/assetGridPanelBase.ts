@@ -40,7 +40,7 @@ export type AssetSelectionResult =
     }
   | { status: "missing"; workspaceAsset?: WorkspaceAsset };
 
-type AssetViewMode = "grid" | "character";
+type AssetViewMode = "grid" | "character" | "potentially-unused";
 
 export interface AssetGridPanelOptions {
   extensionUri: vscode.Uri;
@@ -56,6 +56,7 @@ export interface AssetGridPanelOptions {
   onCopyPath: (identity: string) => Promise<boolean>;
   onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
+  onFindPotentiallyUnused: () => Promise<WorkspaceAsset[]>;
   onStartVariant: (identity: string, input: VariantRequestInput) => Promise<VariantReviewView>;
   onApproveVariant: (candidateId: string) => Promise<WorkspaceAsset[]>;
   onRejectVariant: () => Promise<void>;
@@ -77,6 +78,7 @@ export class AssetGridPanel {
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
   private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   private readonly onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
+  private readonly onFindPotentiallyUnused: () => Promise<WorkspaceAsset[]>;
   private readonly onStartVariant: (identity: string, input: VariantRequestInput) => Promise<VariantReviewView>;
   private readonly onApproveVariant: (candidateId: string) => Promise<WorkspaceAsset[]>;
   private readonly onRejectVariant: () => Promise<void>;
@@ -128,6 +130,7 @@ export class AssetGridPanel {
     this.onCopyPath = options.onCopyPath;
     this.onFindUsages = options.onFindUsages;
     this.onCheckHealth = options.onCheckHealth;
+    this.onFindPotentiallyUnused = options.onFindPotentiallyUnused;
     this.onStartVariant = options.onStartVariant;
     this.onApproveVariant = options.onApproveVariant;
     this.onRejectVariant = options.onRejectVariant;
@@ -206,6 +209,12 @@ export class AssetGridPanel {
 
       if (isViewModeMessage(message)) {
         this.viewMode = message.viewMode;
+        if (message.viewMode === "potentially-unused") {
+          const candidates = await this.onFindPotentiallyUnused();
+          await this.panel.webview.postMessage({ type: "potentiallyUnusedResult", identities: candidates.map(getWorkspaceAssetIdentity), count: candidates.length, total: this.assets.length });
+        } else {
+          await this.postFilterResults(this.viewState.query);
+        }
         return;
       }
 
@@ -624,7 +633,7 @@ function getWebviewHtml(
   </div>
   ${organizationActionNotice ? `<div id="organization-action-notice" class="organization-action-notice"><span>${escapeHtml(organizationActionNotice)}</span><button id="verify-organization" class="secondary compact" type="button">Re-run Analyze Organization</button></div>` : ""}
   <div class="facets" aria-label="Asset filters">
-    <label class="facet-label">View<select id="view-mode" class="facet-select" aria-label="Asset view mode"><option value="grid"${viewMode === "grid" ? " selected" : ""}>Grid</option><option value="character"${viewMode === "character" ? " selected" : ""}>Characters</option></select></label>
+    <label class="facet-label">View<select id="view-mode" class="facet-select" aria-label="Asset view mode"><option value="grid"${viewMode === "grid" ? " selected" : ""}>Grid</option><option value="character"${viewMode === "character" ? " selected" : ""}>Characters</option><option value="potentially-unused"${viewMode === "potentially-unused" ? " selected" : ""}>Potentially Unused</option></select></label>
     ${renderFacetSelect("folder-filter", "Folder", facetOptions.folders)}
     ${renderFacetSelect("asset-type-filter", "Asset Type", facetOptions.assetTypes)}
     ${renderFacetSelect("format-filter", "Format", facetOptions.fileTypes)}
@@ -721,6 +730,12 @@ function getWebviewHtml(
         setSelectedCard(selectedCard);
         const scrollY = Number.isFinite(message.scrollY) && message.scrollY > 0 ? message.scrollY : 0;
         requestAnimationFrame(() => window.scrollTo(0, scrollY));
+        return;
+      }
+
+      if (message.type === 'potentiallyUnusedResult') {
+        applyFilterResults(message.identities || [], message.count || 0, message.total || 0);
+        filterStatus.textContent = 'Potentially Unused · candidate only; dynamic references may not be detected.';
         return;
       }
 
@@ -1794,7 +1809,7 @@ function isViewModeMessage(message: unknown): message is { type: "viewMode"; vie
     && "type" in message
     && message.type === "viewMode"
     && "viewMode" in message
-    && (message.viewMode === "grid" || message.viewMode === "character");
+    && (message.viewMode === "grid" || message.viewMode === "character" || message.viewMode === "potentially-unused");
 }
 
 function isScrollMessage(message: unknown): message is { type: "scroll"; scrollY: number } {

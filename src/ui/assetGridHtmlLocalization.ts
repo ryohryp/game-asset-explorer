@@ -54,7 +54,8 @@ export function localizeAssetGridHtml(
 
   localized = transformSelect(localized, "view-mode", (contents) => contents
     .replace(/(<option value="grid"[^>]*>)Grid<\/option>/, `$1${escapeHtml(strings.grid)}</option>`)
-    .replace(/(<option value="character"[^>]*>)Characters<\/option>/, `$1${escapeHtml(strings.characters)}</option>`));
+    .replace(/(<option value="character"[^>]*>)Characters<\/option>/, `$1${escapeHtml(strings.characters)}</option>`)
+    .replace(/(<option value="potentially-unused"[^>]*>)Potentially Unused<\/option>/, `$1${escapeHtml(strings.potentiallyUnused)}</option>`));
 
   localized = transformSelect(localized, "asset-type-filter", (contents) => contents.replace(
     /(<option value="([^\"]+)">)([^<]+)( \(\d+\)<\/option>)/g,
@@ -102,6 +103,7 @@ export function localizeAssetGridHtml(
   const scriptReplacements: ReadonlyArray<readonly [string, string]> = [
     ["analyzeOrganization.textContent = 'Analyzing…';", "analyzeOrganization.textContent = ui.analyzing;"],
     ["analyzeOrganization.textContent = 'Analyze Organization';", "analyzeOrganization.textContent = ui.analyzeOrganization;"],
+    ["filterStatus.textContent = 'Potentially Unused · candidate only; dynamic references may not be detected.';", "filterStatus.textContent = ui.potentiallyUnusedCaveat;"],
     ["if (status) status.textContent = 'Organization prompt copied.';", "if (status) status.textContent = ui.organizationPromptCopied;"],
     ["if (status) status.textContent = message.message || 'Unable to copy organization prompt.';", "if (status) status.textContent = message.message || ui.unableCopyOrganizationPrompt;"],
     ["if (status) status.textContent = message.message || 'Unable to assign Asset Type.';", "if (status) status.textContent = message.message || ui.unableAssignAssetType;"],

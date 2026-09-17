@@ -13,6 +13,7 @@ import {
   type AssetUsage,
 } from "./usageSearch";
 import { type WorkspaceAsset } from "./workspaceAsset";
+import { findPotentiallyUnusedAssets } from "./core/potentiallyUnusedAssets";
 
 export interface MissingAssetReference extends AssetUsage {
   targetPath: string;
@@ -76,4 +77,19 @@ export async function inspectWorkspaceAssetHealth(
     assetHealth: classifyAssetUsageHealth(directUsages.length),
     missingReferences,
   };
+}
+
+export async function findPotentiallyUnusedWorkspaceAssets(
+  allAssets: readonly WorkspaceAsset[],
+): Promise<WorkspaceAsset[]> {
+  const results: WorkspaceAsset[] = [];
+  const workspaceUris = [...new Set(allAssets.map((asset) => asset.workspaceFolderUri))];
+  for (const workspaceFolderUri of workspaceUris) {
+    const workspaceAssets = allAssets.filter((asset) => asset.workspaceFolderUri === workspaceFolderUri);
+    const workspaceFolder = workspaceAssets[0] && getWorkspaceFolderForAsset(workspaceAssets[0]);
+    if (!workspaceFolder) continue;
+    const files = await readWorkspaceTextFiles(workspaceFolder);
+    results.push(...findPotentiallyUnusedAssets(workspaceAssets, files.map((file) => file.text)));
+  }
+  return results;
 }
