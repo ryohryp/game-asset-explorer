@@ -66,6 +66,10 @@
         "command": "gameAssetExplorer.showAssetProblems",
         "title": "Asset Problems",
         "icon": "$(warning)"
+      },
+      {
+        "command": "gameAssetExplorer.showAssetHealthDashboard",
+        "title": "Asset Health Dashboard"
       }
     ],
     "viewsContainers": {
