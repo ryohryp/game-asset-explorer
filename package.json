@@ -56,6 +56,11 @@
         "command": "gameAssetExplorer.showVariantMatrix",
         "title": "Variant Matrix",
         "icon": "$(table)"
+      },
+      {
+        "command": "gameAssetExplorer.showDuplicates",
+        "title": "Duplicate Images",
+        "icon": "$(files)"
       }
     ],
     "viewsContainers": {
