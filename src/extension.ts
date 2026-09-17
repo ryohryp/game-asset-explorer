@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
-import { inspectWorkspaceAssetHealth } from "./assetHealthSearch";
+import { findPotentiallyUnusedWorkspaceAssets, inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
 import { buildAssetCategorySummary } from "./core/assetCategorySummary";
 import { selectUncategorizedAssetsInFolder } from "./core/bulkAssetTypeAssignment";
@@ -515,6 +515,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         return findWorkspaceAssetUsages(workspaceAsset);
       },
+      onFindPotentiallyUnused: () => findPotentiallyUnusedWorkspaceAssets(discoveredAssets),
       onCheckHealth: async (identity) => {
         const workspaceAsset = findAsset(identity);
         if (!workspaceAsset) {

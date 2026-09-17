@@ -10,6 +10,8 @@ export const ASSET_GRID_LOCALIZATION_MESSAGES = {
   view: "View",
   grid: "Grid",
   characters: "Characters",
+  potentiallyUnused: "Potentially Unused",
+  potentiallyUnusedCaveat: "Potentially Unused · candidate only; dynamic references may not be detected.",
   folder: "Folder",
   assetType: "Asset Type",
   format: "Format",

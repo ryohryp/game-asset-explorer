@@ -172,5 +172,7 @@
   "Generate only from the request and technical constraints": "依頼内容と技術要件だけからプロンプトを生成します",
   "Use this Visual Canon entry's constraints": "このVisual Canonエントリの制約を使用します",
   "Generate New Asset · Visual Canon": "新規アセット生成 · Visual Canon",
-  "Optionally apply an existing project Visual Canon entry.": "必要に応じて既存のプロジェクトVisual Canonを適用します。"
+  "Optionally apply an existing project Visual Canon entry.": "必要に応じて既存のプロジェクトVisual Canonを適用します。",
+  "Potentially Unused": "未参照候補",
+  "Potentially Unused · candidate only; dynamic references may not be detected.": "未参照候補 · 候補表示です。動的な参照は検出できない場合があります。"
 }
