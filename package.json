@@ -70,6 +70,11 @@
       {
         "command": "gameAssetExplorer.showAssetHealthDashboard",
         "title": "Asset Health Dashboard"
+      },
+      {
+        "command": "gameAssetExplorer.showNamingProblems",
+        "title": "Naming Problems",
+        "category": "Game Asset Explorer"
       }
     ],
     "viewsContainers": {

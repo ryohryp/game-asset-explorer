@@ -6,6 +6,7 @@ import { registerVariantMatrixCommand } from "./variantMatrixCommand";
 import { registerDuplicateDetectionCommand } from "./duplicateDetectionCommand";
 import { registerAssetProblemsCommand } from "./assetProblemsCommand";
 import { registerAssetHealthDashboardCommand } from "./assetHealthDashboardCommand";
+import { registerNamingProblemsCommand } from "./namingProblemsCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -16,6 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerDuplicateDetectionCommand(getDiscoveredAssets),
     registerAssetProblemsCommand(getDiscoveredAssets),
     registerAssetHealthDashboardCommand(getDiscoveredAssets),
+    registerNamingProblemsCommand(getDiscoveredAssets),
   );
 }
 
