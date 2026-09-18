@@ -72,6 +72,11 @@
         "title": "Asset Health Dashboard"
       },
       {
+        "command": "gameAssetExplorer.batchRename",
+        "title": "Batch Rename",
+        "category": "Game Asset Explorer"
+      },
+      {
         "command": "gameAssetExplorer.showNamingProblems",
         "title": "Naming Problems",
         "category": "Game Asset Explorer"
