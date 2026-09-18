@@ -77,6 +77,11 @@
         "category": "Game Asset Explorer"
       },
       {
+        "command": "gameAssetExplorer.assetFileOperations",
+        "title": "Move / Copy / Replace Asset",
+        "category": "Game Asset Explorer"
+      },
+      {
         "command": "gameAssetExplorer.showNamingProblems",
         "title": "Naming Problems",
         "category": "Game Asset Explorer"
