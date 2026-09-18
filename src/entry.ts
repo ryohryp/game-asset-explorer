@@ -9,6 +9,7 @@ import { registerAssetHealthDashboardCommand } from "./assetHealthDashboardComma
 import { registerNamingProblemsCommand } from "./namingProblemsCommand";
 import { registerCompareModeCommand } from "./compareModeCommand";
 import { registerTransparentBoundsCommand } from "./transparentBoundsCommand";
+import { registerSpriteSheetCommand } from "./spriteSheetCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -22,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerNamingProblemsCommand(getDiscoveredAssets),
     registerCompareModeCommand(getDiscoveredAssets),
     registerTransparentBoundsCommand(getDiscoveredAssets),
+    registerSpriteSheetCommand(getDiscoveredAssets),
   );
 }
 
