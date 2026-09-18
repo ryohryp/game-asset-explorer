@@ -80,6 +80,11 @@
         "command": "gameAssetExplorer.showTransparentBounds",
         "title": "Transparent Bounds",
         "category": "Game Asset Explorer"
+      },
+      {
+        "command": "gameAssetExplorer.showSpriteSheet",
+        "title": "Sprite Sheet Viewer",
+        "category": "Game Asset Explorer"
       }
     ],
     "viewsContainers": {
