@@ -7,6 +7,7 @@ import { registerDuplicateDetectionCommand } from "./duplicateDetectionCommand";
 import { registerAssetProblemsCommand } from "./assetProblemsCommand";
 import { registerAssetHealthDashboardCommand } from "./assetHealthDashboardCommand";
 import { registerNamingProblemsCommand } from "./namingProblemsCommand";
+import { registerCompareModeCommand } from "./compareModeCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -18,6 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerAssetProblemsCommand(getDiscoveredAssets),
     registerAssetHealthDashboardCommand(getDiscoveredAssets),
     registerNamingProblemsCommand(getDiscoveredAssets),
+    registerCompareModeCommand(getDiscoveredAssets),
   );
 }
 
