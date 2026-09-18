@@ -8,6 +8,7 @@ import { registerAssetProblemsCommand } from "./assetProblemsCommand";
 import { registerAssetHealthDashboardCommand } from "./assetHealthDashboardCommand";
 import { registerNamingProblemsCommand } from "./namingProblemsCommand";
 import { registerCompareModeCommand } from "./compareModeCommand";
+import { registerTransparentBoundsCommand } from "./transparentBoundsCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -20,6 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerAssetHealthDashboardCommand(getDiscoveredAssets),
     registerNamingProblemsCommand(getDiscoveredAssets),
     registerCompareModeCommand(getDiscoveredAssets),
+    registerTransparentBoundsCommand(getDiscoveredAssets),
   );
 }
 
