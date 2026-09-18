@@ -75,6 +75,11 @@
         "command": "gameAssetExplorer.showNamingProblems",
         "title": "Naming Problems",
         "category": "Game Asset Explorer"
+      },
+      {
+        "command": "gameAssetExplorer.showTransparentBounds",
+        "title": "Transparent Bounds",
+        "category": "Game Asset Explorer"
       }
     ],
     "viewsContainers": {
