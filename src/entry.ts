@@ -12,6 +12,7 @@ import { registerTransparentBoundsCommand } from "./transparentBoundsCommand";
 import { registerSpriteSheetCommand } from "./spriteSheetCommand";
 import { registerBatchRenameCommand } from "./batchRenameCommand";
 import { registerAssetFileOperationsCommand } from "./assetFileOperationsCommand";
+import { registerContactSheetCommand } from "./contactSheetCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -26,7 +27,9 @@ export function activate(context: vscode.ExtensionContext): void {
     registerCompareModeCommand(getDiscoveredAssets),
     registerTransparentBoundsCommand(getDiscoveredAssets),
     registerSpriteSheetCommand(getDiscoveredAssets),
-    registerBatchRenameCommand(getDiscoveredAssets),    registerAssetFileOperationsCommand(getDiscoveredAssets),
+    registerBatchRenameCommand(getDiscoveredAssets),
+    registerAssetFileOperationsCommand(getDiscoveredAssets),
+    registerContactSheetCommand(getDiscoveredAssets),
   );
 }
 

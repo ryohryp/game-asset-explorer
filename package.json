@@ -82,6 +82,11 @@
         "category": "Game Asset Explorer"
       },
       {
+        "command": "gameAssetExplorer.exportContactSheet",
+        "title": "Contact Sheet Export",
+        "category": "Game Asset Explorer"
+      },
+      {
         "command": "gameAssetExplorer.showNamingProblems",
         "title": "Naming Problems",
         "category": "Game Asset Explorer"
