@@ -21,6 +21,10 @@ export interface AssetProblem {
   reasons: string[];
 }
 
+export function formatAssetProblemSummary(problem: Pick<AssetProblem, "reasons">): string {
+  return problem.reasons.join("; ");
+}
+
 export async function findAssetProblems(
   assets: readonly WorkspaceAsset[],
   limits: AssetProblemLimits | ((asset: WorkspaceAsset) => AssetProblemLimits) = DEFAULT_ASSET_PROBLEM_LIMITS,

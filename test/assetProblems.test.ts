@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { findAssetProblems, readImageDimensions } from "../src/core/assetProblems";
+import { findAssetProblems, formatAssetProblemSummary, readImageDimensions } from "../src/core/assetProblems";
 import type { WorkspaceAsset } from "../src/workspaceAsset";
 
 function asset(path: string): WorkspaceAsset {
@@ -31,4 +31,8 @@ test("reports explicit reasons using supplied limits", async () => {
   assert.deepEqual(problems[0].reasons, ["File size 24 bytes exceeds 10", "Dimensions 320×180 exceed 200×200"]);
   assert.equal(problems[0].width, 320);
   assert.equal(problems[0].height, 180);
+});
+
+test("formats multiple problem reasons for diagnostics", () => {
+  assert.equal(formatAssetProblemSummary({ reasons: ["too large", "too wide"] }), "too large; too wide");
 });
