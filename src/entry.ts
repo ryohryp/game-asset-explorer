@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
-import { activate as activateExtension, deactivate as deactivateExtension, getDiscoveredAssets } from "./extension";
+import { activate as activateExtension, deactivate as deactivateExtension, getDiscoveredAssets, onDidChangeDiscoveredAssets } from "./extension";
 import { registerGenerateNewAssetPromptCommand } from "./newAssetPromptCommand";
 import { registerGitImageDiffCommand } from "./gitImageDiffCommand";
 import { registerVariantMatrixCommand } from "./variantMatrixCommand";
 import { registerDuplicateDetectionCommand } from "./duplicateDetectionCommand";
 import { registerAssetProblemsCommand } from "./assetProblemsCommand";
+import { registerAssetProblemsDiagnostics } from "./assetProblemsDiagnostics";
 import { registerAssetHealthDashboardCommand } from "./assetHealthDashboardCommand";
 import { registerNamingProblemsCommand } from "./namingProblemsCommand";
 import { registerCompareModeCommand } from "./compareModeCommand";
@@ -23,6 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerVariantMatrixCommand(getDiscoveredAssets),
     registerDuplicateDetectionCommand(getDiscoveredAssets),
     registerAssetProblemsCommand(getDiscoveredAssets),
+    registerAssetProblemsDiagnostics(getDiscoveredAssets, onDidChangeDiscoveredAssets),
     registerAssetHealthDashboardCommand(getDiscoveredAssets),
     registerNamingProblemsCommand(getDiscoveredAssets),
     registerCompareModeCommand(getDiscoveredAssets),

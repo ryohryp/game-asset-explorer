@@ -49,6 +49,8 @@ import {
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
+const discoveredAssetsChanged = new vscode.EventEmitter<readonly WorkspaceAsset[]>();
+export const onDidChangeDiscoveredAssets = discoveredAssetsChanged.event;
 
 export function getDiscoveredAssets(): readonly WorkspaceAsset[] { return discoveredAssets; }
 let disposeWatcherResources: (() => void) | undefined;
@@ -124,6 +126,7 @@ export function activate(context: vscode.ExtensionContext): void {
     activeProfile = getConfiguredAssetProfile();
     if (!workspaceFolders || workspaceFolders.length === 0) {
       discoveredAssets = [];
+      discoveredAssetsChanged.fire(discoveredAssets);
       if (showMessage) {
         await vscode.window.showWarningMessage(
           `Game Asset Explorer: ${vscode.l10n.t("Open a workspace before scanning assets.")}`,
@@ -161,6 +164,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     discoveredAssets = nextAssets;
+    discoveredAssetsChanged.fire(discoveredAssets);
 
     if (warnings.length > 0) {
       console.warn("Game Asset Explorer asset scan warnings:\n" + warnings.join("\n"));
