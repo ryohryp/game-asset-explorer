@@ -15,6 +15,7 @@ import { registerBatchRenameCommand } from "./batchRenameCommand";
 import { registerAssetFileOperationsCommand } from "./assetFileOperationsCommand";
 import { registerContactSheetCommand } from "./contactSheetCommand";
 import { registerMissingAssetReferencesCommand } from "./missingAssetReferencesCommand";
+import { registerAssetDependencyGraphCommand } from "./assetDependencyGraphCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerAssetFileOperationsCommand(getDiscoveredAssets),
     registerContactSheetCommand(getDiscoveredAssets),
     registerMissingAssetReferencesCommand(getDiscoveredAssets),
+    registerAssetDependencyGraphCommand(getDiscoveredAssets),
   );
 }
 
