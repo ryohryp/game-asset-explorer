@@ -4,6 +4,8 @@ import {
   findVisualCanonEntriesForAsset,
   parseVisualCanon,
   resolveVisualCanonEntry,
+  serializeVisualCanon,
+  upsertVisualCanonEntry,
   VisualCanonError,
 } from "../src/core/visualCanon";
 
@@ -62,4 +64,19 @@ test("rejects unsafe Canon anchor paths", () => {
     entries: [{ id: "escape", kind: "item", anchors: ["../outside.png"] }],
   });
   assert.throws(() => parseVisualCanon(invalid), VisualCanonError);
+});
+
+test("upserts and serializes a Canon entry only when all anchors exist", () => {
+  const updated = upsertVisualCanonEntry(parseVisualCanon(validCanon), {
+    id: "goblin",
+    kind: "character",
+    anchors: ["assets/enemies/goblin_idle.png"],
+    constraints: ["inked silhouette"],
+  }, ["assets/enemies/goblin_idle.png", "assets/environments/forest.png"]);
+  assert.equal(updated.entries.length, 2);
+  assert.deepEqual(updated.entries.find((entry) => entry.id === "goblin")?.constraints, ["inked silhouette"]);
+  assert.equal(parseVisualCanon(serializeVisualCanon(updated)).entries.length, 2);
+  assert.throws(() => upsertVisualCanonEntry(undefined, {
+    id: "missing", kind: "item", anchors: ["assets/missing.png"],
+  }, []), VisualCanonError);
 });

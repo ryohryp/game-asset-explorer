@@ -53,6 +53,7 @@ export interface AssetGridPanelOptions {
   onSelect: (identity: string) => Promise<AssetSelectionResult>;
   onSetAssetType: (identity: string, assetType: string | undefined) => Promise<WorkspaceAsset[]>;
   onSetCharacter: (identity: string, character: string | undefined) => Promise<WorkspaceAsset[]>;
+  onEditVisualCanon: (identity: string) => Promise<void>;
   onCopyPath: (identity: string) => Promise<boolean>;
   onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
@@ -78,6 +79,7 @@ export class AssetGridPanel {
   private readonly onCopyPath: (identity: string) => Promise<boolean>;
   private readonly onFindUsages: (identity: string) => Promise<AssetUsage[]>;
   private readonly onCheckHealth: (identity: string) => Promise<AssetHealthReport | undefined>;
+  private readonly onEditVisualCanon: (identity: string) => Promise<void>;
   private readonly onFindPotentiallyUnused: () => Promise<WorkspaceAsset[]>;
   private readonly onStartVariant: (identity: string, input: VariantRequestInput) => Promise<VariantReviewView>;
   private readonly onApproveVariant: (candidateId: string) => Promise<WorkspaceAsset[]>;
@@ -127,6 +129,7 @@ export class AssetGridPanel {
     this.onSelect = options.onSelect;
     this.onSetAssetType = options.onSetAssetType;
     this.onSetCharacter = options.onSetCharacter;
+    this.onEditVisualCanon = options.onEditVisualCanon;
     this.onCopyPath = options.onCopyPath;
     this.onFindUsages = options.onFindUsages;
     this.onCheckHealth = options.onCheckHealth;
@@ -237,6 +240,21 @@ export class AssetGridPanel {
         await this.panel.webview.postMessage({ type: "assetDetails", result });
         if (this.variantReview && this.variantReviewIdentity === message.identity) {
           await this.panel.webview.postMessage({ type: "variantReviewResult", review: this.variantReview });
+        }
+        return;
+      }
+
+      if (isIdentityMessage(message, "editVisualCanon")) {
+        if (this.viewState.selectedIdentity === message.identity) {
+          try {
+            await this.onEditVisualCanon(message.identity);
+            const result = await this.onSelect(message.identity);
+            if (!this.disposed && this.viewState.selectedIdentity === message.identity) {
+              await this.panel.webview.postMessage({ type: "assetDetails", result });
+            }
+          } catch (error) {
+            if (!this.disposed) await this.panel.webview.postMessage({ type: "visualCanonError", message: formatError(error) });
+          }
         }
         return;
       }
@@ -1235,10 +1253,21 @@ function getWebviewHtml(
       const memberships = Array.isArray(state.memberships) ? state.memberships : [];
       if (memberships.length === 0) {
         addDetailRow('Visual Canon', 'No membership');
+        addVisualCanonEditButton();
         return;
       }
       const prefix = memberships.length === 1 ? '1 membership · ' : memberships.length + ' memberships · ';
       addDetailRow('Visual Canon', prefix + memberships.map((membership) => membership.id + ' [' + membership.kind + '] · anchor').join(', '));
+      addVisualCanonEditButton();
+    }
+
+    function addVisualCanonEditButton() {
+      const button = document.createElement('button');
+      button.textContent = 'Edit Visual Canon';
+      button.addEventListener('click', () => {
+        if (selectedIdentity) vscode.postMessage({ type: 'editVisualCanon', identity: selectedIdentity });
+      });
+      details.appendChild(button);
     }
 
     function addGenerationLineageDetails(state) {

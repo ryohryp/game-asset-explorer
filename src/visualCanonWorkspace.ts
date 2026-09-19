@@ -2,6 +2,8 @@ import {
   findVisualCanonEntriesForAsset,
   parseVisualCanon,
   resolveVisualCanonEntry,
+  serializeVisualCanon,
+  upsertVisualCanonEntry,
   VisualCanonError,
   type ResolvedVisualCanonContext,
   type VisualCanonEntry,
@@ -80,4 +82,23 @@ export function resolveUnambiguousWorkspaceVisualCanon(
     state.memberships[0].id,
     discoveredAssets,
   );
+}
+
+export interface WorkspaceVisualCanonStore extends WorkspaceVisualCanonReader {
+  write(workspaceFolderUri: string, text: string): Promise<void>;
+}
+
+export async function saveWorkspaceVisualCanonEntry(
+  selectedAsset: WorkspaceAsset,
+  entry: VisualCanonEntry,
+  discoveredAssets: readonly WorkspaceAsset[],
+  store: WorkspaceVisualCanonStore,
+): Promise<void> {
+  const existing = await store.read(selectedAsset.workspaceFolderUri);
+  const canon = existing === undefined ? undefined : parseVisualCanon(existing);
+  const paths = discoveredAssets
+    .filter((asset) => asset.workspaceFolderUri === selectedAsset.workspaceFolderUri)
+    .map((asset) => asset.asset.relativePath);
+  const updated = upsertVisualCanonEntry(canon, entry, paths);
+  await store.write(selectedAsset.workspaceFolderUri, serializeVisualCanon(updated));
 }
