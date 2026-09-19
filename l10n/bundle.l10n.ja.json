@@ -1,4 +1,10 @@
 {
+  "File size": "ファイルサイズ",
+  "State": "状態",
+  "Asset Problems": "アセットの問題",
+  "Filter by file size": "ファイルサイズで絞り込み",
+  "Filter by state": "状態で絞り込み",
+  "Unable to apply filters: ": "フィルターを適用できません: ",
   "Open a workspace before scanning assets.": "アセットをスキャンする前にワークスペースを開いてください。",
   "Found {0} image assets{1}.": "画像アセットを{0}件見つけました{1}。",
   "Assigned {0} assets in {1} as {2}.": "{1} のアセット{0}件を {2} に設定しました。",

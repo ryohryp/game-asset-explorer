@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import {
   buildAssetFacetOptions,
-  filterWorkspaceAssetsByFacets,
+  isAssetSizeFilter,
   reconcileAssetFacetSelection,
   type AssetFacetOption,
   type AssetFacetSelection,
@@ -46,7 +46,7 @@ export interface AssetGridPanelOptions {
   extensionUri: vscode.Uri;
   assetProfile: AssetProfile;
   onRefresh: () => Promise<WorkspaceAsset[]>;
-  onSearch: (query: string) => WorkspaceAsset[];
+  onSearch: (query: string, facets: AssetFacetSelection, isCurrent: () => boolean) => Promise<WorkspaceAsset[]>;
   onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
   onCopyOrganizationPrompt: () => Promise<void>;
   onBulkAssignAssetType: (workspaceFolderUri: string, folder: string, assetType: string) => Promise<WorkspaceAsset[]>;
@@ -69,7 +69,7 @@ export class AssetGridPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly onRefresh: () => Promise<WorkspaceAsset[]>;
-  private readonly onSearch: (query: string) => WorkspaceAsset[];
+  private readonly onSearch: AssetGridPanelOptions["onSearch"];
   private readonly onAnalyzeOrganization: () => Promise<FolderOrganizationReport>;
   private readonly onCopyOrganizationPrompt: () => Promise<void>;
   private readonly onBulkAssignAssetType: (workspaceFolderUri: string, folder: string, assetType: string) => Promise<WorkspaceAsset[]>;
@@ -96,6 +96,7 @@ export class AssetGridPanel {
   private viewMode: AssetViewMode = "grid";
   private organizationActionNotice: string | undefined;
   private disposed = false;
+  private filterRequest = 0;
 
   static show(options: AssetGridPanelOptions): AssetGridPanel {
     if (AssetGridPanel.currentPanel) {
@@ -212,8 +213,10 @@ export class AssetGridPanel {
 
       if (isViewModeMessage(message)) {
         this.viewMode = message.viewMode;
+        const request = ++this.filterRequest;
         if (message.viewMode === "potentially-unused") {
           const candidates = await this.onFindPotentiallyUnused();
+          if (this.disposed || request !== this.filterRequest) return;
           await this.panel.webview.postMessage({ type: "potentiallyUnusedResult", identities: candidates.map(getWorkspaceAssetIdentity), count: candidates.length, total: this.assets.length });
         } else {
           await this.postFilterResults(this.viewState.query);
@@ -393,6 +396,7 @@ export class AssetGridPanel {
     if (this.disposed) {
       return;
     }
+    ++this.filterRequest;
     this.assetProfile = assetProfile;
     this.assets = [...assets];
     this.facets = reconcileAssetFacetSelection(this.facets, this.assets, this.assetProfile.assetTypes);
@@ -416,15 +420,27 @@ export class AssetGridPanel {
   }
 
   private async postFilterResults(query: string): Promise<void> {
-    const searchMatches = this.onSearch(query);
-    const matches = filterWorkspaceAssetsByFacets(searchMatches, "", this.facets);
+    const result = await this.search(query);
+    if (!result) return;
     await this.panel.webview.postMessage({
       type: "filterResults",
-      identities: matches.map(getWorkspaceAssetIdentity),
-      count: matches.length,
+      identities: result.matches.map(getWorkspaceAssetIdentity),
+      count: result.matches.length,
+      error: result.error,
       total: this.assets.length,
       facets: this.facets,
     });
+  }
+
+  private async search(query: string): Promise<{ matches: WorkspaceAsset[]; error?: string } | undefined> {
+    const request = ++this.filterRequest;
+    const isCurrent = () => !this.disposed && request === this.filterRequest;
+    try {
+      const matches = await this.onSearch(query, this.facets, isCurrent);
+      return isCurrent() ? { matches } : undefined;
+    } catch (error) {
+      return isCurrent() ? { matches: [], error: formatError(error) } : undefined;
+    }
   }
 
   private async restoreViewState(): Promise<void> {
@@ -443,15 +459,16 @@ export class AssetGridPanel {
       this.usageResults = [];
     }
 
-    const searchMatches = this.onSearch(state.query);
-    const matches = filterWorkspaceAssetsByFacets(searchMatches, "", this.facets);
+    const result = await this.search(state.query);
+    if (!result) return;
     await this.panel.webview.postMessage({
       type: "restoreState",
       query: state.query,
       selectedIdentity: state.selectedIdentity,
       scrollY: state.scrollY,
-      identities: matches.map(getWorkspaceAssetIdentity),
-      count: matches.length,
+      identities: result.matches.map(getWorkspaceAssetIdentity),
+      count: result.matches.length,
+      error: result.error,
       total: this.assets.length,
       facets: this.facets,
     });
@@ -461,18 +478,18 @@ export class AssetGridPanel {
     }
 
     const restoringIdentity = state.selectedIdentity;
-    const result = await this.onSelect(restoringIdentity);
+    const selectionResult = await this.onSelect(restoringIdentity);
     if (this.viewState.selectedIdentity !== restoringIdentity || this.disposed) {
       return;
     }
-    if (result.status !== "available") {
+    if (selectionResult.status !== "available") {
       this.usageResults = [];
     }
-    await this.panel.webview.postMessage({ type: "assetDetails", result });
-    if (result.status === "available" && this.usageResults.length > 0) {
+    await this.panel.webview.postMessage({ type: "assetDetails", result: selectionResult });
+    if (selectionResult.status === "available" && this.usageResults.length > 0) {
       await this.panel.webview.postMessage({ type: "findUsagesResult", usages: this.usageResults });
     }
-    if (result.status === "available" && this.variantReview && this.variantReviewIdentity === restoringIdentity) {
+    if (selectionResult.status === "available" && this.variantReview && this.variantReviewIdentity === restoringIdentity) {
       await this.panel.webview.postMessage({ type: "variantReviewResult", review: this.variantReview });
     }
   }
@@ -655,11 +672,14 @@ function getWebviewHtml(
     ${renderFacetSelect("folder-filter", "Folder", facetOptions.folders)}
     ${renderFacetSelect("asset-type-filter", "Asset Type", facetOptions.assetTypes)}
     ${renderFacetSelect("format-filter", "Format", facetOptions.fileTypes)}
+    <label class="facet-label">File size<select id="size-filter" class="facet-select" aria-label="Filter by file size"><option value="">All</option><option value="under-1-mib">&lt; 1 MiB</option><option value="at-least-1-mib">≥ 1 MiB</option><option value="at-least-5-mib">≥ 5 MiB</option></select></label>
+    <label class="facet-label">State<select id="state-filter" class="facet-select" aria-label="Filter by state"><option value="">All</option><option value="problems">Asset Problems</option></select></label>
     ${workspaceFacet}
     <button id="clear-filters" class="secondary compact" type="button">Clear filters</button>
     <span id="filter-status" class="filter-status">No facet filters</span>
     <span class="profile-status">Profile: ${escapeHtml(assetProfile.label)}</span>
   </div>
+  <div id="filter-error" role="status" hidden></div>
   <section id="organization-report" class="organization-report" hidden></section>
   ${body}
   <script nonce="${nonce}">
@@ -675,6 +695,9 @@ function getWebviewHtml(
     const folderFilter = document.getElementById('folder-filter');
     const assetTypeFilter = document.getElementById('asset-type-filter');
     const formatFilter = document.getElementById('format-filter');
+    const sizeFilter = document.getElementById('size-filter');
+    const stateFilter = document.getElementById('state-filter');
+    const filterError = document.getElementById('filter-error');
     const workspaceFilter = document.getElementById('workspace-filter');
     const clearFilters = document.getElementById('clear-filters');
     const filterStatus = document.getElementById('filter-status');
@@ -698,10 +721,18 @@ function getWebviewHtml(
       vscode.postMessage({ type: 'viewMode', viewMode: viewModeControl.value });
     });
     search.addEventListener('input', sendFilter);
-    [folderFilter, assetTypeFilter, formatFilter, workspaceFilter]
+    [folderFilter, assetTypeFilter, formatFilter, workspaceFilter, sizeFilter, stateFilter]
       .filter(Boolean)
       .forEach((control) => control.addEventListener('change', sendFilter));
     clearFilters.addEventListener('click', () => {
+      search.value = '';
+      sizeFilter.value = '';
+      stateFilter.value = '';
+      if (viewModeControl.value === 'potentially-unused') {
+        viewModeControl.value = 'grid';
+        applyViewMode('grid');
+        vscode.postMessage({ type: 'viewMode', viewMode: 'grid' });
+      }
       if (folderFilter) folderFilter.value = '';
       if (assetTypeFilter) assetTypeFilter.value = '';
       if (formatFilter) formatFilter.value = '';
@@ -735,6 +766,10 @@ function getWebviewHtml(
     window.addEventListener('message', (event) => {
       const message = event.data;
       if (!message) return;
+      if (message.type === 'filterResults' || message.type === 'restoreState') {
+        filterError.hidden = !message.error;
+        filterError.textContent = message.error ? 'Unable to apply filters: ' + message.error : '';
+      }
 
       if (message.type === 'restoreState') {
         search.value = typeof message.query === 'string' ? message.query : '';
@@ -1075,6 +1110,8 @@ function getWebviewHtml(
         folder: folderFilter && folderFilter.value ? folderFilter.value : undefined,
         assetType: assetTypeFilter && assetTypeFilter.value ? assetTypeFilter.value : undefined,
         fileType: formatFilter && formatFilter.value ? formatFilter.value : undefined,
+        size: sizeFilter.value || undefined,
+        state: stateFilter.value || undefined,
         workspaceFolderUri: workspaceFilter && workspaceFilter.value ? workspaceFilter.value : undefined,
       };
     }
@@ -1088,15 +1125,17 @@ function getWebviewHtml(
       if (folderFilter) folderFilter.value = facets.folder || '';
       if (assetTypeFilter) assetTypeFilter.value = facets.assetType || '';
       if (formatFilter) formatFilter.value = facets.fileType || '';
+      sizeFilter.value = facets.size || '';
+      stateFilter.value = facets.state || '';
       if (workspaceFilter) workspaceFilter.value = facets.workspaceFolderUri || '';
       updateFilterStatus();
     }
 
     function updateFilterStatus() {
       const facets = currentFacets();
-      const count = [facets.folder, facets.assetType, facets.fileType, facets.workspaceFolderUri].filter(Boolean).length;
+      const count = [facets.folder, facets.assetType, facets.fileType, facets.workspaceFolderUri, facets.size, facets.state, search.value.trim()].filter(Boolean).length;
       filterStatus.textContent = count === 0 ? 'No facet filters' : count + ' active filter' + (count === 1 ? '' : 's');
-      clearFilters.disabled = count === 0;
+      clearFilters.disabled = count === 0 && viewModeControl.value !== 'potentially-unused';
     }
 
     function applyFilterResults(identities, count, total) {
@@ -1817,10 +1856,14 @@ function isAssetFacetSelection(value: unknown): value is AssetFacetSelection {
     assetType?: unknown;
     fileType?: unknown;
     workspaceFolderUri?: unknown;
+    size?: unknown;
+    state?: unknown;
   };
   return isOptionalString(facet.folder)
     && isOptionalString(facet.assetType)
     && (facet.fileType === undefined || isAssetFileType(facet.fileType))
+    && (facet.size === undefined || isAssetSizeFilter(facet.size))
+    && (facet.state === undefined || facet.state === "problems")
     && isOptionalString(facet.workspaceFolderUri);
 }
 

@@ -4,13 +4,51 @@ import {
   UNCATEGORIZED_ASSET_TYPE_LABEL,
 } from "./core/assetProfiles";
 import { AssetFileType } from "./core/assetScanner";
-import { filterWorkspaceAssets, WorkspaceAsset } from "./workspaceAsset";
+import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
+
+export type AssetSizeFilter = "under-1-mib" | "at-least-1-mib" | "at-least-5-mib";
+
+export function isAssetSizeFilter(value: unknown): value is AssetSizeFilter {
+  return value === "under-1-mib" || value === "at-least-1-mib" || value === "at-least-5-mib";
+}
 
 export interface AssetFacetSelection {
   folder?: string;
   assetType?: string;
   fileType?: AssetFileType;
   workspaceFolderUri?: string;
+  size?: AssetSizeFilter;
+  state?: "problems";
+}
+
+/** All I/O is deferred until cheap text/facet matching has narrowed the candidates. */
+export async function filterWorkspaceAssetsForSearch(
+  assets: readonly WorkspaceAsset[],
+  query: string,
+  selection: AssetFacetSelection,
+  loaders: {
+    sizeBytes: (asset: WorkspaceAsset) => Promise<number>;
+    problems: (assets: readonly WorkspaceAsset[]) => Promise<readonly WorkspaceAsset[]>;
+  },
+  isCurrent: () => boolean = () => true,
+): Promise<WorkspaceAsset[]> {
+  let matches = filterWorkspaceAssetsByFacets(assets, query, selection);
+  if (selection.size) {
+    const sized: WorkspaceAsset[] = [];
+    for (const asset of matches) {
+      if (!isCurrent()) return [];
+      const bytes = await loaders.sizeBytes(asset);
+      const threshold = selection.size === "at-least-5-mib" ? 5 * 1024 * 1024 : 1024 * 1024;
+      if (selection.size === "under-1-mib" ? bytes < threshold : bytes >= threshold) sized.push(asset);
+    }
+    matches = sized;
+  }
+  if (!isCurrent()) return [];
+  if (selection.state === "problems" && matches.length > 0) {
+    const identities = new Set((await loaders.problems(matches)).map(getWorkspaceAssetIdentity));
+    matches = matches.filter((asset) => identities.has(getWorkspaceAssetIdentity(asset)));
+  }
+  return matches;
 }
 
 export interface AssetFacetOption {
@@ -110,6 +148,8 @@ export function reconcileAssetFacetSelection(
     workspaceFolderUri: hasOption(options.workspaces, selection.workspaceFolderUri)
       ? selection.workspaceFolderUri
       : undefined,
+    ...(selection.size ? { size: selection.size } : {}),
+    ...(selection.state ? { state: selection.state } : {}),
   };
 }
 
