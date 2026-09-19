@@ -104,6 +104,11 @@
       {
         "command": "gameAssetExplorer.showMissingAssetReferences",
         "title": "Missing Asset References"
+      },
+      {
+        "command": "gameAssetExplorer.showAssetDependencyGraph",
+        "title": "Asset Dependency Graph",
+        "category": "Game Asset Explorer"
       }
     ],
     "viewsContainers": {
