@@ -13,6 +13,7 @@ import { registerSpriteSheetCommand } from "./spriteSheetCommand";
 import { registerBatchRenameCommand } from "./batchRenameCommand";
 import { registerAssetFileOperationsCommand } from "./assetFileOperationsCommand";
 import { registerContactSheetCommand } from "./contactSheetCommand";
+import { registerMissingAssetReferencesCommand } from "./missingAssetReferencesCommand";
 
 export function activate(context: vscode.ExtensionContext): void {
   activateExtension(context);
@@ -30,6 +31,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registerBatchRenameCommand(getDiscoveredAssets),
     registerAssetFileOperationsCommand(getDiscoveredAssets),
     registerContactSheetCommand(getDiscoveredAssets),
+    registerMissingAssetReferencesCommand(getDiscoveredAssets),
   );
 }
 
