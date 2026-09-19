@@ -162,6 +162,27 @@ False positives are acceptable in the MVP; hidden false negatives caused by pret
 
 The search executor belongs to the VS Code layer. Candidate generation and result normalization may live in core if they remain VS Code-independent.
 
+## Safe Rename References
+
+The explicit Safe Rename References command previews a single image rename and static
+reference edits using the same bounded text-file reader and candidate matcher as Find
+Usages. It preserves the directory and image extension. Core plans plain offset edits;
+the extension owns preview, confirmation, filesystem preflight, and WorkspaceEdit.
+
+Only complete, unescaped quoted paths are eligible. Filename-only, interpolated,
+concatenated, suffixed, and nested-document relative paths remain unchanged. Explicit
+leading-slash workspace paths are eligible in nested documents. The preview warns that
+dynamic, ambiguous, excluded, unreadable, and unsearched references may remain.
+
+Destination collisions, including case-insensitive sibling matches, stop before writes.
+After confirmation the source and reference snapshots are checked again. Rename and
+reference edits are submitted together in one WorkspaceEdit, with a non-overwriting
+rename first. Mixed resource/text edits are not promised to be filesystem-atomic;
+failures direct the user to inspect the files and use VS Code Undo before retrying.
+Reference edits use normal editor buffers and must be reviewed and saved by the user.
+There is no automatic save of unrelated work. Asset identity still changes on rename;
+no stable ID, manifest, parser, or runtime API is introduced.
+
 ## Asset Health
 
 Post-MVP Asset Health extends the same bounded workspace text-search model rather than introducing a persistent reference graph.
@@ -253,7 +274,7 @@ The architecture intentionally does not define these yet:
 - stable asset IDs
 - persistent tags
 - persistent reference graph/index
-- safe rename/replace transactions
+- general move/replace transactions beyond the bounded Safe Rename References command
 - duplicate detection
 - engine-specific reference parsers
 - persisted AI generation metadata and lineage
