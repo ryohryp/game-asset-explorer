@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildAssetFacetOptions,
   filterWorkspaceAssetsByFacets,
+  filterWorkspaceAssetsForSearch,
   reconcileAssetFacetSelection,
 } from "../src/assetFacets";
 import { UNCATEGORIZED_ASSET_TYPE } from "../src/core/assetProfiles";
@@ -112,4 +113,81 @@ test("drops facet selections that no longer exist after a refresh or profile cha
     ),
     { folder: undefined, assetType: undefined, fileType: "png", workspaceFolderUri: undefined },
   );
+});
+
+const unexpectedLoaders = {
+  sizeBytes: async (): Promise<number> => { throw new Error("Unexpected size read"); },
+  problems: async (): Promise<WorkspaceAsset[]> => { throw new Error("Unexpected Problems read"); },
+};
+
+test("ordinary search and clear never load size or Problems state", async () => {
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "HERO", { fileType: "png" }, unexpectedLoaders), [assets[0]]);
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "", {}, unexpectedLoaders), assets);
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "absent", { size: "under-1-mib", state: "problems" }, unexpectedLoaders), []);
+});
+
+test("loads size after all cheap facets, then Problems only for size matches", async () => {
+  const sizeReads: WorkspaceAsset[] = [];
+  const problemReads: WorkspaceAsset[][] = [];
+  const selected = assets[0];
+  const sameFolder = { ...selected, asset: { ...selected.asset, relativePath: "assets/characters/hero-small.png", fileName: "hero-small.png" } };
+  const otherWorkspace = { ...selected, workspaceFolderUri: "file:///elsewhere" };
+  const otherType = { ...selected, assetType: "Enemy" };
+  const otherFormat = { ...selected, asset: { ...selected.asset, fileType: "webp" as const } };
+  const otherFolder = { ...selected, asset: { ...selected.asset, relativePath: "other/hero.png" } };
+  const result = await filterWorkspaceAssetsForSearch(
+    [...assets, sameFolder, otherWorkspace, otherType, otherFormat, otherFolder], "hero",
+    { folder: "assets/characters", fileType: "png", assetType: "Character", workspaceFolderUri: "file:///game", size: "at-least-1-mib", state: "problems" },
+    {
+      sizeBytes: async (asset) => { sizeReads.push(asset); return asset === selected ? 1024 * 1024 : 1; },
+      problems: async (candidates) => { problemReads.push([...candidates]); return candidates; },
+    },
+  );
+  assert.deepEqual(sizeReads, [selected, sameFolder]);
+  assert.deepEqual(problemReads, [[selected]]);
+  assert.deepEqual(result, [selected]);
+  assert.equal(result[0], selected, "preserves the asset used by normal Details selection");
+});
+
+test("size presets include exact binary boundaries and reread on each request", async () => {
+  const bytes = [0, 1024 * 1024 - 1, 1024 * 1024, 5 * 1024 * 1024];
+  let reads = 0;
+  const loaders = { ...unexpectedLoaders, sizeBytes: async (asset: WorkspaceAsset) => { reads++; return bytes[assets.indexOf(asset)]; } };
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "", { size: "under-1-mib" }, loaders), assets.slice(0, 2));
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "", { size: "at-least-1-mib" }, loaders), assets.slice(2));
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "", { size: "at-least-5-mib" }, loaders), assets.slice(3));
+  assert.equal(reads, 12);
+});
+
+test("Problems-only filtering needs no size read and keeps workspace identity", async () => {
+  const samePath = { ...assets[0], workspaceFolderUri: "file:///other" };
+  const loaders = { ...unexpectedLoaders, problems: async () => [samePath] };
+  assert.deepEqual(await filterWorkspaceAssetsForSearch([assets[0], samePath], "", { state: "problems" }, loaders), [samePath]);
+});
+
+test("does not inspect Problems after size excludes every candidate", async () => {
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "", { size: "at-least-1-mib", state: "problems" }, {
+    ...unexpectedLoaders, sizeBytes: async () => 0,
+  }), []);
+});
+
+test("propagates unavailable metadata/state instead of reporting clean results", async () => {
+  await assert.rejects(filterWorkspaceAssetsForSearch(assets, "", { size: "under-1-mib" }, unexpectedLoaders), /Unexpected size read/);
+  await assert.rejects(filterWorkspaceAssetsForSearch(assets, "", { state: "problems" }, unexpectedLoaders), /Unexpected Problems read/);
+});
+
+test("stops superseded requests before further file or state reads", async () => {
+  let current = true;
+  let reads = 0;
+  assert.deepEqual(await filterWorkspaceAssetsForSearch(assets, "", { size: "under-1-mib", state: "problems" }, {
+    ...unexpectedLoaders,
+    sizeBytes: async () => { current = false; reads++; return 0; },
+  }, () => current), []);
+  assert.equal(reads, 1);
+});
+
+test("retains size and state filters across empty scans so new files can match", () => {
+  const selection = reconcileAssetFacetSelection({ size: "at-least-5-mib", state: "problems" }, []);
+  assert.equal(selection.size, "at-least-5-mib");
+  assert.equal(selection.state, "problems");
 });

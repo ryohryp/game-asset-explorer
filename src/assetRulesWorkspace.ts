@@ -1,9 +1,10 @@
 import * as vscode from "vscode";
 import { ASSET_RULES_PATH, parseAssetRules, type AssetRulesConfig } from "./core/assetRules";
 
-export async function loadWorkspaceAssetRules(): Promise<Map<string, AssetRulesConfig>> {
+export async function loadWorkspaceAssetRules(workspaceUris?: ReadonlySet<string>): Promise<Map<string, AssetRulesConfig>> {
   const configs = new Map<string, AssetRulesConfig>();
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (workspaceUris && !workspaceUris.has(folder.uri.toString())) continue;
     const uri = vscode.Uri.joinPath(folder.uri, ASSET_RULES_PATH);
     try {
       const text = new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));

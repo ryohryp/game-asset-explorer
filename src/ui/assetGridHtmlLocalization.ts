@@ -28,6 +28,8 @@ export function localizeAssetGridHtml(
 
   localized = replaceAttribute(localized, "placeholder", "Search filename or path", strings.searchPlaceholder);
   localized = replaceAttribute(localized, "aria-label", "Search assets", strings.searchAssets);
+  localized = replaceAttribute(localized, "aria-label", "Filter by file size", strings.filterByFileSize);
+  localized = replaceAttribute(localized, "aria-label", "Filter by state", strings.filterByState);
   localized = localized
     .replace(
       '<button id="analyze-organization" class="secondary" type="button">Analyze Organization</button>',
@@ -49,6 +51,9 @@ export function localizeAssetGridHtml(
     .replace('<label class="facet-label">Folder<select', `<label class="facet-label">${escapeHtml(strings.folder)}<select`)
     .replace('<label class="facet-label">Asset Type<select', `<label class="facet-label">${escapeHtml(strings.assetType)}<select`)
     .replace('<label class="facet-label">Format<select', `<label class="facet-label">${escapeHtml(strings.format)}<select`)
+    .replace('<label class="facet-label">File size<select', `<label class="facet-label">${escapeHtml(strings.fileSize)}<select`)
+    .replace('<label class="facet-label">State<select', `<label class="facet-label">${escapeHtml(strings.state)}<select`)
+    .replace('<option value="problems">Asset Problems</option>', `<option value="problems">${escapeHtml(strings.assetProblems)}</option>`)
     .replace('<label class="facet-label">Workspace<select', `<label class="facet-label">${escapeHtml(strings.workspace)}<select`)
     .replaceAll('<option value="">All</option>', `<option value="">${escapeHtml(strings.all)}</option>`);
 
@@ -101,6 +106,7 @@ export function localizeAssetGridHtml(
   );
 
   const scriptReplacements: ReadonlyArray<readonly [string, string]> = [
+    ["'Unable to apply filters: ' + message.error", "ui.unableApplyFilters + message.error"],
     ["analyzeOrganization.textContent = 'Analyzing…';", "analyzeOrganization.textContent = ui.analyzing;"],
     ["analyzeOrganization.textContent = 'Analyze Organization';", "analyzeOrganization.textContent = ui.analyzeOrganization;"],
     ["filterStatus.textContent = 'Potentially Unused · candidate only; dynamic references may not be detected.';", "filterStatus.textContent = ui.potentiallyUnusedCaveat;"],

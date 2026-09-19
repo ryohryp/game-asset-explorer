@@ -3,6 +3,10 @@ import * as vscode from "vscode";
 import { configureAssetDirectories, updateAssetDirectoryContext } from "./assetDirectoryConfiguration";
 import { findPotentiallyUnusedWorkspaceAssets, inspectWorkspaceAssetHealth } from "./assetHealthSearch";
 import { loadAssetDetails } from "./core/assetDetails";
+import { filterWorkspaceAssetsForSearch } from "./assetFacets";
+import { loadWorkspaceAssetRules } from "./assetRulesWorkspace";
+import { findAssetProblems } from "./core/assetProblems";
+import { resolveAssetProblemLimits } from "./core/assetRules";
 import { buildAssetCategorySummary } from "./core/assetCategorySummary";
 import { selectUncategorizedAssetsInFolder } from "./core/bulkAssetTypeAssignment";
 import { analyzeFolderOrganization } from "./core/folderOrganization";
@@ -46,7 +50,7 @@ import {
   saveWorkspaceVisualCanonEntry,
   type WorkspaceVisualCanonStore,
 } from "./visualCanonWorkspace";
-import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
+import { getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
 let discoveredAssets: WorkspaceAsset[] = [];
 const discoveredAssetsChanged = new vscode.EventEmitter<readonly WorkspaceAsset[]>();
@@ -433,7 +437,23 @@ export function activate(context: vscode.ExtensionContext): void {
       extensionUri: context.extensionUri,
       assetProfile: activeProfile,
       onRefresh: () => scanAndStore(false),
-      onSearch: (query) => filterWorkspaceAssets(discoveredAssets, query),
+      onSearch: (query, facets, isCurrent) => filterWorkspaceAssetsForSearch(discoveredAssets, query, facets, {
+        sizeBytes: async (asset) => {
+          const result = await loadAssetDetails(asset.asset);
+          if (result.status !== "available") throw new Error(`Asset unavailable: ${asset.asset.relativePath}`);
+          return result.details.sizeBytes;
+        },
+        problems: async (assets) => {
+          const rules = await loadWorkspaceAssetRules(new Set(assets.map((asset) => asset.workspaceFolderUri)));
+          const matches: WorkspaceAsset[] = [];
+          for (const asset of assets) {
+            if (!isCurrent()) break;
+            const limits = resolveAssetProblemLimits(asset.asset.relativePath, rules.get(asset.workspaceFolderUri));
+            if ((await findAssetProblems([asset], limits)).length > 0) matches.push(asset);
+          }
+          return matches;
+        },
+      }, isCurrent),
       onAnalyzeOrganization: async () => enrichOrganizationReportWithFolderIntent(analyzeFolderOrganization(discoveredAssets)),
       onCopyOrganizationPrompt: async () => {
         const report = await enrichOrganizationReportWithFolderIntent(analyzeFolderOrganization(discoveredAssets));

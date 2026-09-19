@@ -144,6 +144,8 @@ Matching should initially be case-insensitive substring matching.
 
 Tags are not an MVP data source yet. The UI should not imply persistent tag support until a concrete metadata source is introduced.
 
+The grid combines text search with folder, asset type, format, workspace, file-size, and Asset Problems filters. File-size presets use binary MiB; Asset Problems uses the existing inspection and workspace rules. Cheap text/facet matching runs first, then size metadata is loaded only for those candidates, and Problems inspection only for the remaining candidates when requested. Results are transient, with no persistent index or scan-time metadata work. Failed reads/rules show a filter error rather than claiming no problems; superseded asynchronous results are discarded. Clear filters also clears text search to restore all assets.
+
 ## Find Usages
 
 Find Usages should start with workspace text search rather than AST or engine-specific parsing.
