@@ -93,3 +93,25 @@ export async function findPotentiallyUnusedWorkspaceAssets(
   }
   return results;
 }
+
+export async function findMissingWorkspaceAssetReferences(
+  allAssets: readonly WorkspaceAsset[],
+): Promise<MissingAssetReference[]> {
+  const results: MissingAssetReference[] = [];
+  const workspaceUris = [...new Set(allAssets.map((asset) => asset.workspaceFolderUri))];
+  for (const workspaceFolderUri of workspaceUris) {
+    const workspaceAssets = allAssets.filter((asset) => asset.workspaceFolderUri === workspaceFolderUri);
+    const workspaceFolder = workspaceAssets[0] && getWorkspaceFolderForAsset(workspaceAssets[0]);
+    if (!workspaceFolder) continue;
+    const files = await readWorkspaceTextFiles(workspaceFolder);
+    const paths = workspaceAssets.map((asset) => asset.asset.relativePath);
+    for (const file of files) {
+      for (const reference of findMissingDirectReferences(extractDirectImageReferences(file.text), paths)) {
+        const start = offsetToPosition(file.text, reference.startOffset);
+        const end = offsetToPosition(file.text, reference.endOffset);
+        results.push({ sourcePath: file.sourcePath, uri: file.uri.toString(), line: start.line, character: start.character, endLine: end.line, endCharacter: end.character, matchedText: reference.raw, targetPath: reference.normalizedPath, evidence: "direct" });
+      }
+    }
+  }
+  return results.sort((a, b) => a.sourcePath.localeCompare(b.sourcePath) || a.line - b.line || a.character - b.character);
+}
