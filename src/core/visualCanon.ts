@@ -57,6 +57,24 @@ export function parseVisualCanon(text: string): VisualCanonFile {
   return { schemaVersion: 1, entries };
 }
 
+export function upsertVisualCanonEntry(
+  canon: VisualCanonFile | undefined,
+  entry: VisualCanonEntry,
+  availableAssetPaths: readonly string[],
+): VisualCanonFile {
+  const candidate: VisualCanonFile = {
+    schemaVersion: 1,
+    entries: [...(canon?.entries ?? []).filter((item) => item.id !== entry.id), entry],
+  };
+  const parsed = parseVisualCanon(JSON.stringify(candidate));
+  resolveVisualCanonEntry(parsed, entry.id, availableAssetPaths);
+  return parsed;
+}
+
+export function serializeVisualCanon(canon: VisualCanonFile): string {
+  return JSON.stringify(canon, null, 2) + "\n";
+}
+
 export function findVisualCanonEntriesForAsset(
   canon: VisualCanonFile,
   relativePath: string,

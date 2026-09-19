@@ -43,7 +43,8 @@ import { VariantWorkflow } from "./variantWorkflow";
 import {
   loadWorkspaceVisualCanonForAsset,
   resolveUnambiguousWorkspaceVisualCanon,
-  type WorkspaceVisualCanonReader,
+  saveWorkspaceVisualCanonEntry,
+  type WorkspaceVisualCanonStore,
 } from "./visualCanonWorkspace";
 import { filterWorkspaceAssets, getWorkspaceAssetIdentity, WorkspaceAsset } from "./workspaceAsset";
 
@@ -82,7 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   };
 
-  const visualCanonReader: WorkspaceVisualCanonReader = {
+  const visualCanonReader: WorkspaceVisualCanonStore = {
     read: async (workspaceFolderUri) => {
       const canonUri = vscode.Uri.joinPath(vscode.Uri.parse(workspaceFolderUri), VISUAL_CANON_PATH);
       try {
@@ -93,6 +94,14 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         throw error;
       }
+    },
+    write: async (workspaceFolderUri, text) => {
+      const workspaceUri = vscode.Uri.parse(workspaceFolderUri);
+      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(workspaceUri, ".game-asset-explorer"));
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(workspaceUri, VISUAL_CANON_PATH),
+        new TextEncoder().encode(text),
+      );
     },
   };
 
@@ -499,6 +508,52 @@ export function activate(context: vscode.ExtensionContext): void {
 
         await updateWorkspaceAssetCharacter(workspaceAsset, character, assetTypeStore);
         return scanAndStore(false);
+      },
+      onEditVisualCanon: async (identity) => {
+        const selected = findAsset(identity);
+        if (!selected) throw new Error(vscode.l10n.t("Selected asset is no longer available. Refresh and try again."));
+        const state = await loadWorkspaceVisualCanonForAsset(selected, visualCanonReader);
+        const existing = state.memberships.length === 1 && state.canon
+          ? state.canon.entries.find((entry) => entry.id === state.memberships[0].id)
+          : undefined;
+        const id = await vscode.window.showInputBox({
+          title: vscode.l10n.t("Visual Canon entry"),
+          prompt: vscode.l10n.t("Short Git-friendly id for this Canon entry"),
+          value: existing?.id ?? selected.asset.fileName.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9._-]+/g, "-"),
+          validateInput: (value) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.trim()) ? undefined : vscode.l10n.t("Use letters, numbers, dot, underscore, or hyphen."),
+        });
+        if (!id) return;
+        const kinds = ["character", "environment", "ui", "item", "effect", "other"] as const;
+        const kindPick = await vscode.window.showQuickPick(kinds.map((kind) => ({ label: kind, assetKind: kind })), {
+          title: vscode.l10n.t("Visual Canon kind"),
+          placeHolder: existing?.kind,
+        });
+        if (!kindPick) return;
+        const sameWorkspace = discoveredAssets.filter((asset) => asset.workspaceFolderUri === selected.workspaceFolderUri);
+        const anchorPicks = await vscode.window.showQuickPick(
+          sameWorkspace.map((asset) => ({
+            label: asset.asset.relativePath,
+            identity: getWorkspaceAssetIdentity(asset),
+            picked: asset.asset.relativePath === selected.asset.relativePath || existing?.anchors.includes(asset.asset.relativePath),
+          })),
+          { title: vscode.l10n.t("Visual Canon anchors"), canPickMany: true, placeHolder: vscode.l10n.t("Select one or more workspace images") },
+        );
+        if (!anchorPicks) return;
+        const anchors = Array.from(new Set([selected.asset.relativePath, ...anchorPicks.map((pick) => pick.label)]));
+        const constraintsText = await vscode.window.showInputBox({
+          title: vscode.l10n.t("Visual Canon constraints"),
+          prompt: vscode.l10n.t("Comma-separated semantic/style constraints (optional)"),
+          value: existing?.constraints?.join(", ") ?? "",
+        });
+        if (constraintsText === undefined) return;
+        await saveWorkspaceVisualCanonEntry(selected, {
+          id: id.trim(),
+          kind: kindPick.assetKind,
+          anchors,
+          ...(constraintsText.trim() ? { constraints: constraintsText.split(",").map((value) => value.trim()).filter(Boolean) } : {}),
+          ...(existing?.forbidden?.length ? { forbidden: existing.forbidden } : {}),
+        }, discoveredAssets, visualCanonReader);
+        await vscode.window.showInformationMessage(`Game Asset Explorer: ${vscode.l10n.t("Visual Canon saved.")}`);
       },
       onCopyPath: async (identity) => {
         const workspaceAsset = findAsset(identity);

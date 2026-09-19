@@ -5,6 +5,7 @@ import {
   loadWorkspaceVisualCanonForAsset,
   resolveUnambiguousWorkspaceVisualCanon,
   resolveWorkspaceVisualCanonMembership,
+  saveWorkspaceVisualCanonEntry,
   type WorkspaceVisualCanonReader,
 } from "../src/visualCanonWorkspace";
 import { type WorkspaceAsset } from "../src/workspaceAsset";
@@ -142,4 +143,21 @@ test("unambiguous resolution keeps missing anchors fail-closed and workspace-iso
     ]),
     (error: unknown) => error instanceof VisualCanonError && error.message.includes("goblin_style.png"),
   );
+});
+
+test("saves a validated Canon entry and refuses missing anchors before write", async () => {
+  let written: string | undefined;
+  const store = {
+    read: async () => undefined,
+    write: async (_workspace: string, text: string) => { written = text; },
+  };
+  await saveWorkspaceVisualCanonEntry(selected, {
+    id: "goblin", kind: "character", anchors: ["assets/goblin_idle.png"], constraints: ["inked"],
+  }, [selected], store);
+  assert.equal(JSON.parse(written!).entries[0].id, "goblin");
+  written = undefined;
+  await assert.rejects(() => saveWorkspaceVisualCanonEntry(selected, {
+    id: "goblin", kind: "character", anchors: ["assets/missing.png"],
+  }, [selected], store), VisualCanonError);
+  assert.equal(written, undefined);
 });
